@@ -2980,6 +2980,17 @@ function pgDataArchive(){
     <button class="btn bgr" style="width:100%;padding:11px" onclick="generateArchive()"><i class="ti ti-file-download"></i> Generate PDF</button>
   </div>
 
+  <div class="card">
+    <div class="ct"><i class="ti ti-file-spreadsheet"></i> Download Staff Details</div>
+    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Download a complete CSV file with all staff information including name, section, designation, salary, join date, bank details, security status, and more.</div>
+    <label class="lbl">Select staff to download</label>
+    <select id="dl_staff_scope" class="inp" style="margin-bottom:12px">
+      <option value="all">All Staff</option>
+      ${staff.map(s=>`<option value="${s.id}">${s.name} — ${s.section}</option>`).join('')}
+    </select>
+    <button class="btn bb" style="width:100%;padding:11px" onclick="downloadStaffDetailsCSV()"><i class="ti ti-file-spreadsheet"></i> Download CSV</button>
+  </div>
+
   <div class="card" style="border-color:#dc262655">
     <div class="ct" style="color:#f87171"><i class="ti ti-trash"></i> Delete Data (free up storage)</div>
     <div class="alert aw" style="font-size:11px"><i class="ti ti-alert-triangle"></i> Permanently deletes attendance, salary sheets, releases, receipts and signature images for the chosen period. <b>This cannot be undone</b> — download the PDF archive first.</div>
@@ -3033,6 +3044,52 @@ function delScopeChange(){
   const v=document.getElementById('del_scope').value;
   document.getElementById('del_g_month').style.display=v==='month'?'block':'none';
   document.getElementById('del_g_year').style.display=v==='year'?'block':'none';
+}
+
+// Download staff details as CSV
+function downloadStaffDetailsCSV(){
+  const scope=document.getElementById('dl_staff_scope').value;
+  let staffToExport=[];
+  if(scope==='all'){
+    staffToExport=getStaffOnly();
+  } else {
+    const st=DB.staff_users.find(s=>s.id===scope);
+    if(st) staffToExport=[st];
+  }
+  if(!staffToExport.length){toast('No staff members found.','warn');return;}
+  
+  const headers=['ID','Name','Username','Section','Designation','Basic Salary','Join Month','Increment Date','Security','Security %','Bank Name','Account Title','Account No','Left Month','Status'];
+  const rows=staffToExport.map(s=>{
+    return [
+      s.id,
+      s.name||'',
+      s.username||'',
+      s.section||'',
+      s.designation||'',
+      s.salary||0,
+      s.join_month||'',
+      s.increment_date||'',
+      s.security?'Yes':'No',
+      s.security_pct||0,
+      s.bank_name||'',
+      s.account_title||'',
+      s.account_no||'',
+      s.left_month||'',
+      hasLeft(s)?'Left':'Active'
+    ].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',');
+  });
+  
+  const csv=headers.join(',')+'\n'+rows.join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='staff_details_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Staff details downloaded successfully!','success');
 }
 
 // Gather → fetch signatures → open a print window with the full archive.
