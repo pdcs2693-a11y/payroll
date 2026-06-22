@@ -20,19 +20,14 @@ body.light{
 }
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .2s,color .2s}
 /* ── Boot / loading splash ── */
-#boot-loader{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:radial-gradient(900px 500px at 50% 32%,#1b2541 0%,var(--bg) 72%);transition:opacity .5s ease,visibility .5s ease}
-body.light #boot-loader{background:radial-gradient(900px 500px at 50% 32%,#d7e4ff 0%,var(--bg) 72%)}
+#boot-loader{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);transition:opacity .5s ease,visibility .5s ease}
 #boot-loader.hide{opacity:0;visibility:hidden;pointer-events:none}
 .bl-badge{position:relative;display:flex;align-items:center;justify-content:center;width:80px;height:80px}
-.bl-ring{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#60a5fa,#a78bfa,#34d399,#60a5fa);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 7px),#000 0);mask:radial-gradient(farthest-side,transparent calc(100% - 7px),#000 0);animation:blspin 1s linear infinite}
-.bl-ico{font-size:30px;color:#60a5fa;animation:blpulse 1.6s ease-in-out infinite}
+.bl-ring{position:absolute;inset:0;border-radius:50%;border:4px solid var(--border-soft);border-top:4px solid #3b82f6;animation:blspin 0.8s linear infinite}
+.bl-ico{font-size:30px;color:#3b82f6}
 .bl-title{font-size:17px;font-weight:800;color:var(--text);letter-spacing:.3px;text-align:center}
 .bl-sub{font-size:12px;color:var(--text3);margin-top:4px;text-align:center}
-.bl-bar{width:180px;height:4px;border-radius:6px;background:var(--inset);overflow:hidden;position:relative}
-.bl-bar span{position:absolute;left:-45%;width:45%;height:100%;border-radius:6px;background:linear-gradient(90deg,#60a5fa,#a78bfa);animation:blbar 1.15s cubic-bezier(.4,0,.2,1) infinite}
 @keyframes blspin{to{transform:rotate(360deg)}}
-@keyframes blpulse{0%,100%{transform:scale(1);opacity:.82}50%{transform:scale(1.13);opacity:1}}
-@keyframes blbar{0%{left:-45%}100%{left:100%}}
 .auth-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
 .auth-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:440px;max-width:100%}
 .auth-logo{text-align:center;margin-bottom:24px}
@@ -470,11 +465,10 @@ body.light *::-webkit-scrollbar-thumb:hover{background:#9cc0f0}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
-<body>
+<body class="light">
 <div id="boot-loader">
   <div class="bl-badge"><div class="bl-ring"></div><span class="bl-ico" id="bl-ico"><i class="ti ti-school"></i></span></div>
   <div><div class="bl-title" id="bl-title">PDC&amp;S Portal</div><div class="bl-sub">Loading your workspace…</div></div>
-  <div class="bl-bar"><span></span></div>
 </div>
 <script>
   /* Show the saved portal logo/name in the splash instantly (cached from last load). */
@@ -4913,7 +4907,7 @@ async function undoIncrementApplied(id){
   toast('Increment undone for '+st.name+'.','info');
 }
 
-try{ if(localStorage.getItem('pdcs_theme')==='light') document.body.classList.add('light'); }catch(e){}
+try{ if(localStorage.getItem('pdcs_theme')==='dark') document.body.classList.remove('light'); }catch(e){}
 // Hide the boot splash once data has loaded and the first render is done.
 function hideBootLoader(){
   const bl=document.getElementById('boot-loader');
