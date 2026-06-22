@@ -3377,7 +3377,8 @@ function renderModal(){
       <button class="btn bgr" style="width:100%;padding:11px" onclick="markLeft('${s.id}')"><i class="ti ti-logout"></i> Mark as Left</button>`;
     } else {
       // ── Already left — manage eligibility, refund release & reinstatement ──
-      const canRelease=(APP.user.role==='director')||(APP.user.role==='admin');
+      const canRelease=APP.user.role==='director';
+      const canSaveRefundMonth=APP.user.role==='director'||APP.user.role==='admin';
       const rMonth=refundMonth(s);
       c=`<div class="mt">Leaving Details — ${s.name} <button class="xbtn" onclick="closeModal()">×</button></div>
       <div class="sr"><span style="color:var(--text2)">Last working month</span><span style="font-weight:700">${fmtMonthLabel(s.left_month)}</span></div>
@@ -3392,7 +3393,7 @@ function renderModal(){
         ? `<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-info-circle"></i> No security deposit was collected from this person — nothing to refund.</div>`
         : !s.sec_refund_eligible
           ? `<div class="alert aw" style="font-size:11px;margin-bottom:12px"><i class="ti ti-ban"></i> Marked <b>not eligible</b> — no security refund can be added in the last or next month.</div>
-             ${canRelease?`<button class="btn bou" style="width:100%;padding:10px;margin-bottom:10px" onclick="setRefundEligible('${s.id}',true)"><i class="ti ti-check"></i> Make eligible for refund</button>`:''}`
+             ${canSaveRefundMonth?`<button class="btn bou" style="width:100%;padding:10px;margin-bottom:10px" onclick="setRefundEligible('${s.id}',true)"><i class="ti ti-check"></i> Make eligible for refund</button>`:''}`
           : (r&&r.released)
             ? `${r.signed?`<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> Refund of <b>Rs${(r.amount||deposit).toLocaleString()}</b> released and signed for ${fmtMonthLabel(r.month)}.</div>`
                  :`<div class="alert aw" style="font-size:11px;margin-bottom:12px"><i class="ti ti-clock"></i> Refund of <b>Rs${(r.amount||deposit).toLocaleString()}</b> released for ${fmtMonthLabel(r.month)} — awaiting the staff member's signature.</div>`}
@@ -3403,8 +3404,9 @@ function renderModal(){
                  <option value="${s.left_month}">Last working month — ${fmtMonthLabel(s.left_month)}</option>
                  <option value="${nextMonth(s.left_month)}" selected>Next month — ${fmtMonthLabel(nextMonth(s.left_month))}</option>
                </select>
-               ${canRelease?`<button class="btn bgr" style="width:100%;padding:11px;margin-bottom:8px" onclick="releaseSecurityRefund('${s.id}')"><i class="ti ti-send"></i> Release security refund</button>`:`<div class="tm">Awaiting release by the Director/Admin.</div>`}
-               ${canRelease?`<button class="btn bou" style="width:100%;padding:9px;margin-bottom:8px" onclick="setRefundEligible('${s.id}',false)"><i class="ti ti-ban"></i> Mark not eligible (forfeit)</button>`:''}`}
+               ${canSaveRefundMonth?`<button class="btn bb" style="width:100%;padding:10px;margin-bottom:8px" onclick="saveRefundMonth('${s.id}')"><i class="ti ti-device-floppy"></i> Save month</button>`:''}
+               ${canRelease?`<button class="btn bgr" style="width:100%;padding:11px;margin-bottom:8px" onclick="releaseSecurityRefund('${s.id}')"><i class="ti ti-send"></i> Release security refund</button>`:`<div class="tm" style="margin-top:4px">Only the Director can release the refund.</div>`}
+               ${canSaveRefundMonth?`<button class="btn bou" style="width:100%;padding:9px;margin-bottom:8px" onclick="setRefundEligible('${s.id}',false)"><i class="ti ti-ban"></i> Mark not eligible (forfeit)</button>`:''}`}
       <div class="fsep"></div>
       <button class="btn brd" style="width:100%;padding:10px" onclick="reinstateStaff('${s.id}')"><i class="ti ti-arrow-back-up"></i> Reinstate (cancel leaving)</button>`;
     }
@@ -4163,8 +4165,17 @@ async function setRefundEligible(id, val){
   }
   await saveField('staff_users'); R();
 }
+async function saveRefundMonth(id){
+  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
+  const monthEl=document.getElementById('refund_month');
+  const month=(monthEl&&monthEl.value)||refundMonth(st);
+  if(!DB.security_refunds) DB.security_refunds={};
+  DB.security_refunds[id]={month, released:false, signed:false};
+  await saveField('security_refunds'); R();
+  toast('Refund month saved as '+fmtMonthLabel(month)+'.','success');
+}
 async function releaseSecurityRefund(id){
-  if(!(APP.user.role==='director'||APP.user.role==='admin')){ toast('Only the Director or Admin can release a refund.','error'); return; }
+  if(APP.user.role!=='director'){ toast('Only the Director can release a refund.','error'); return; }
   const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
   if(!refundEligible(st)){ toast('This staff member is not eligible for a security refund.','error'); return; }
   const amount=securityRefundAmount(id);
@@ -4178,7 +4189,7 @@ async function releaseSecurityRefund(id){
   toast('Security refund of Rs'+amount.toLocaleString()+' released for '+st.name+'.','success');
 }
 async function undoSecurityRefund(id){
-  if(!(APP.user.role==='director'||APP.user.role==='admin')){ toast('Only the Director or Admin can undo a refund.','error'); return; }
+  if(APP.user.role!=='director'){ toast('Only the Director can undo a refund.','error'); return; }
   const r=securityRefund(id); if(!r) return;
   if(r.signed){ toast('This refund has already been signed and cannot be undone.','error'); return; }
   if(!await confirmDialog('Undo the security refund release?')) return;
