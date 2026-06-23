@@ -3452,7 +3452,9 @@ function renderModal(){
             ? `${r.signed?`<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> Refund of <b>Rs${(r.amount||deposit).toLocaleString()}</b> released and signed for ${fmtMonthLabel(r.month)}.</div>`
                  :`<div class="alert aw" style="font-size:11px;margin-bottom:12px"><i class="ti ti-clock"></i> Refund of <b>Rs${(r.amount||deposit).toLocaleString()}</b> released for ${fmtMonthLabel(r.month)} — awaiting the staff member's signature.</div>`}
                ${canRelease&&!r.signed?`<button class="btn brd" style="width:100%;padding:10px;margin-bottom:8px" onclick="undoSecurityRefund('${s.id}')"><i class="ti ti-arrow-back-up"></i> Undo release</button>`:''}`
-            : `<div class="alert ai" style="font-size:11px;margin-bottom:10px"><i class="ti ti-info-circle"></i> Release the <b>Rs${deposit.toLocaleString()}</b> deposit refund for ${fmtMonthLabel(rMonth)}. The staff member then signs a receipt.</div>
+            : `<div class="alert ai" style="font-size:11px;margin-bottom:10px"><i class="ti ti-info-circle"></i> Release the <b>Rs${deposit.toLocaleString()}</b> deposit refund. The staff member then signs a receipt.</div>
+               <label class="lbl">Refund in month</label>
+               <div style="margin-bottom:10px">${monthPicker(rMonth,{id:'refund_month',style:'width:100%'})}</div>
                ${canRelease?`<button class="btn bgr" style="width:100%;padding:11px;margin-bottom:8px" onclick="releaseSecurityRefund('${s.id}')"><i class="ti ti-send"></i> Release security refund</button>`:`<div class="tm" style="margin-top:4px">Only the Director can release the refund.</div>`}
                ${canSaveRefundMonth?`<button class="btn bou" style="width:100%;padding:9px;margin-bottom:8px" onclick="setRefundEligible('${s.id}',false)"><i class="ti ti-ban"></i> Mark not eligible (forfeit)</button>`:''}`}
       <div class="fsep"></div>
@@ -4229,7 +4231,8 @@ async function releaseSecurityRefund(id){
   const amount=securityRefundAmount(id);
   if(amount<=0){ toast('No security deposit was collected — nothing to refund.','info'); return; }
   const existing=(DB.security_refunds||{})[id];
-  const month=(existing&&existing.month)||refundMonth(st);
+  const monthEl=document.getElementById('refund_month');
+  const month=(monthEl&&monthEl.value)||((existing&&existing.month)||refundMonth(st));
   if(!await confirmDialog('Release the security deposit refund of Rs'+amount.toLocaleString()+' for '+st.name+' in '+fmtMonthLabel(month)+'?\n\nThe staff member will then sign a receipt acknowledging it.')) return;
   if(!DB.security_refunds) DB.security_refunds={};
   DB.security_refunds[id]={amount, month, released:true, release_date:new Date().toLocaleDateString(), released_by:(APP.user.username||APP.user.role), signed:false, sign_date:''};
