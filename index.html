@@ -2266,38 +2266,28 @@ function pgApprovals(){
 // paid) a security deposit refund, with its release + signature status. Always
 // visible until the refund is released and signed, so it never gets lost.
 function securityRefundsCard(){
-  const canRelease=(APP.user.role==='director')||(APP.user.role==='admin');
-  const isDirector=APP.user.role==='director';
-  const lefts=getStaffOnly().filter(s=>hasLeft(s)&&refundEligible(s)&&securityRefundAmount(s.id)>0)
-    .filter(s=>{const r=securityRefund(s.id);return !(r&&r.signed);}); // hide once fully signed
-  // Also surface recently-completed (signed) ones so the director can view the signature.
-  const signed=getStaffOnly().filter(s=>hasLeft(s)&&(securityRefund(s.id)||{}).signed);
-  if(!lefts.length && !signed.length) return '';
-  const row=s=>{
-    const r=securityRefund(s.id); const amt=securityRefundAmount(s.id);
-    const st=refundStatus(s);
-    let action='';
-    if(r&&r.signed) action=`<button class="btn bou bsm" onclick="openRefundSigView('${s.id}')"><i class="ti ti-signature"></i> View signature</button>`;
-    else if(r&&r.released) action=`<span class="badge by"><i class="ti ti-clock"></i> Awaiting signature</span>${canRelease?` <button class="btn bou bsm" onclick="undoSecurityRefund('${s.id}')" title="Undo release"><i class="ti ti-arrow-back-up"></i></button>`:''}`;
-    else action=canRelease?`<button class="btn bgr bsm" onclick="openModal('mark_left','${s.id}')"><i class="ti ti-send"></i> Release refund</button>`:'<span class="tm">Pending Director/Admin</span>';
-    let cols=`<td style="white-space:nowrap">${s.name}<div class="tm" style="font-size:10px">${s.section} · left ${fmtMonthLabel(s.left_month)}</div></td>
-      <td>${fmtMonthLabel(refundMonth(s))}</td>
-      <td style="font-weight:700">Rs${(r&&r.amount!=null?r.amount:amt).toLocaleString()}</td>`;
-    if(!isDirector){
-      cols+=`<td><span class="badge ${st.cls}">${st.label}</span></td>`;
-      cols+=`<td style="white-space:nowrap">${action}</td>`;
-    }
-    return `<tr>${cols}</tr>`;
-  };
-  const all=[...lefts, ...signed.filter(s=>!lefts.includes(s))];
-  return `<div class="card" style="border-color:#f59e0b55">
-    <div class="ct"><i class="ti ti-shield-lock" style="color:#fbbf24"></i> Security Deposit Refunds — Left Staff</div>
-    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Staff who have left and are owed their security deposit back. Release the refund (shows in the chosen month, with no salary) — the staff member then signs a receipt for it.</div>
-    <div style="overflow-x:auto"><table style="min-width:560px"><thead><tr>
-      <th>Staff</th><th>Refund Month</th><th>Amount</th>${isDirector?'':'<th>Status</th><th></th>'}
-    </tr></thead><tbody>
-    ${all.map(row).join('')}
-    </tbody></table></div>
+  const m=APP.month;
+  const released=getStaffOnly().filter(s=>{
+    const r=securityRefund(s.id);
+    return r&&r.released&&r.month===m;
+  });
+  if(!released.length) return '';
+  const rows=released.map(s=>{
+    const r=securityRefund(s.id);
+    const amt=r.amount||securityRefundAmount(s.id);
+    return `<div class="arow" style="border-left:3px solid #34d399">
+      <div class="arow-info">
+        <div style="font-size:13px;font-weight:600">${s.name} <span class="tm" style="font-size:11px">· ${s.section}</span></div>
+        <div class="tm" style="font-size:11px">Left ${fmtMonthLabel(s.left_month)}</div>
+      </div>
+      <div style="font-weight:700;color:#34d399;font-size:14px">+Rs${amt.toLocaleString()}</div>
+      ${r.signed?`<span class="badge bg"><i class="ti ti-check"></i> Signed</span>`:`<span class="badge by"><i class="ti ti-clock"></i> Awaiting signature</span>`}
+    </div>`;
+  }).join('');
+  return `<div class="card" style="border-color:#34d39955">
+    <div class="ct"><i class="ti ti-shield-lock" style="color:#34d399"></i> Security Deposit Refunds — ${fmtMonthLabel(m)}</div>
+    <div class="alert as" style="font-size:11px"><i class="ti ti-check-circle"></i> Security deposit has been added to this month's salary for the staff below.</div>
+    ${rows}
   </div>`;
 }
 
@@ -3412,51 +3402,31 @@ function renderModal(){
     const left=hasLeft(s);
     const r=securityRefund(s.id);
     const nowM=new Date().toISOString().slice(0,7);
-    const refSt=refundStatus(s);
+    const nextM=nextMonth(nowM);
     if(!left){
       // ── Mark a staff member as having LEFT ──
       c=`<div class="mt">Mark as Left — ${s.name} <button class="xbtn" onclick="closeModal()">×</button></div>
-      <div class="alert ai" style="font-size:11px;margin-bottom:14px"><i class="ti ti-info-circle"></i> <span>Set the staff member's <b>last working month</b>. They'll receive a normal salary up to that month (with <b>no security deduction</b> in that final month), then nothing further — except a one-time security deposit refund if you mark them eligible below.</span></div>
+      <div class="alert ai" style="font-size:11px;margin-bottom:14px"><i class="ti ti-info-circle"></i> <span>Set the staff member's <b>last working month</b>. They'll receive a normal salary up to that month (with <b>no security deduction</b> in that final month).</span></div>
       <label class="lbl">Last Working Month</label>
       <div style="margin-bottom:12px">${monthPicker(s.left_month||nowM,{id:'left_month',style:'width:100%'})}</div>
       <label class="lbl">Last Working Date <span style="color:var(--text4);font-size:10px">(optional)</span></label>
       <div style="margin-bottom:12px">${datePicker(s.left_date||'',{id:'left_date',style:'width:100%'})}</div>
-      <div class="fsep"><i class="ti ti-shield-lock"></i> Security Deposit Refund</div>
-      <div class="sr"><span style="color:var(--text2)">Deposit collected so far</span><span style="font-weight:700">Rs${deposit.toLocaleString()}</span></div>
-      <label style="display:flex;align-items:center;gap:8px;margin:10px 0;cursor:pointer">
-        <input type="checkbox" id="left_eligible" ${s.sec_refund_eligible!==false?'checked':''} style="width:16px;height:16px">
-        <span>Eligible for security refund <span style="color:var(--text4);font-size:11px">(untick if this person forfeits their deposit — no refund will be allowed)</span></span>
-      </label>
-      <div class="alert aw" style="font-size:11px;margin-bottom:12px"><i class="ti ti-alert-triangle"></i> If eligible, you can release the refund from the last working month onward (it appears for the next month by default). The staff member then signs a receipt for it.</div>
+      ${deposit>0?`<div class="fsep"><i class="ti ti-shield-lock"></i> Security Deposit Refund</div>
+      <div class="sr"><span style="color:var(--text2)">Deposit to refund</span><span style="font-weight:700;color:#34d399">Rs${deposit.toLocaleString()}</span></div>
+      <label class="lbl">Add refund to which month's salary?</label>
+      <div style="margin-bottom:12px">${monthPicker(nextM,{id:'refund_month',style:'width:100%'})}</div>
+      <div class="alert as" style="font-size:11px;margin-bottom:12px"><i class="ti ti-check-circle"></i> The full <b>Rs${deposit.toLocaleString()}</b> security deposit will be added to that month's salary automatically.</div>`:''}
       <button class="btn bgr" style="width:100%;padding:11px" onclick="markLeft('${s.id}')"><i class="ti ti-logout"></i> Mark as Left</button>`;
     } else {
-      // ── Already left — manage eligibility, refund release & reinstatement ──
-      const canRelease=APP.user.role==='director';
-      const canSaveRefundMonth=APP.user.role==='director'||APP.user.role==='admin';
-      const rMonth=refundMonth(s);
+      // ── Already left ──
+      const rMonth=r&&r.month?r.month:nextMonth(s.left_month);
       c=`<div class="mt">Leaving Details — ${s.name} <button class="xbtn" onclick="closeModal()">×</button></div>
       <div class="sr"><span style="color:var(--text2)">Last working month</span><span style="font-weight:700">${fmtMonthLabel(s.left_month)}</span></div>
       ${s.left_date?`<div class="sr"><span style="color:var(--text2)">Last working date</span><span>${s.left_date}</span></div>`:''}
       <div class="sr"><span style="color:var(--text2)">Security deposit</span><span style="font-weight:700">Rs${deposit.toLocaleString()}</span></div>
-      <div class="sr"><span style="color:var(--text2)">Refund status</span><span><span class="badge ${refSt.cls}">${refSt.label}</span></span></div>
-      ${r&&r.released?`<div class="sr"><span style="color:var(--text2)">Refund month</span><span>${fmtMonthLabel(r.month)}</span></div>
-        <div class="sr"><span style="color:var(--text2)">Released by</span><span>${r.released_by||'—'} · ${r.release_date||''}</span></div>
-        ${r.signed?`<div class="sr"><span style="color:var(--text2)">Receipt signed</span><span style="color:#34d399">${r.sign_date||'✓'}</span></div>`:''}`:''}
-      <div class="fsep"><i class="ti ti-shield-lock"></i> Security Refund</div>
-      ${deposit<=0
-        ? `<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-info-circle"></i> No security deposit was collected from this person — nothing to refund.</div>`
-        : !s.sec_refund_eligible
-          ? `<div class="alert aw" style="font-size:11px;margin-bottom:12px"><i class="ti ti-ban"></i> Marked <b>not eligible</b> — no security refund can be added in the last or next month.</div>
-             ${canSaveRefundMonth?`<button class="btn bou" style="width:100%;padding:10px;margin-bottom:10px" onclick="setRefundEligible('${s.id}',true)"><i class="ti ti-check"></i> Make eligible for refund</button>`:''}`
-          : (r&&r.released)
-            ? `${r.signed?`<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> Refund of <b>Rs${(r.amount||deposit).toLocaleString()}</b> released and signed for ${fmtMonthLabel(r.month)}.</div>`
-                 :`<div class="alert aw" style="font-size:11px;margin-bottom:12px"><i class="ti ti-clock"></i> Refund of <b>Rs${(r.amount||deposit).toLocaleString()}</b> released for ${fmtMonthLabel(r.month)} — awaiting the staff member's signature.</div>`}
-               ${canRelease&&!r.signed?`<button class="btn brd" style="width:100%;padding:10px;margin-bottom:8px" onclick="undoSecurityRefund('${s.id}')"><i class="ti ti-arrow-back-up"></i> Undo release</button>`:''}`
-            : `<div class="alert ai" style="font-size:11px;margin-bottom:10px"><i class="ti ti-info-circle"></i> Release the <b>Rs${deposit.toLocaleString()}</b> deposit refund. The staff member then signs a receipt.</div>
-               <label class="lbl">Refund in month</label>
-               <div style="margin-bottom:10px">${monthPicker(rMonth,{id:'refund_month',style:'width:100%'})}</div>
-               ${canRelease?`<button class="btn bgr" style="width:100%;padding:11px;margin-bottom:8px" onclick="releaseSecurityRefund('${s.id}')"><i class="ti ti-send"></i> Release security refund</button>`:`<div class="tm" style="margin-top:4px">Only the Director can release the refund.</div>`}
-               ${canSaveRefundMonth?`<button class="btn bou" style="width:100%;padding:9px;margin-bottom:8px" onclick="setRefundEligible('${s.id}',false)"><i class="ti ti-ban"></i> Mark not eligible (forfeit)</button>`:''}`}
+      ${r&&r.released?`<div class="fsep"><i class="ti ti-shield-lock"></i> Security Refund</div>
+      <div class="alert as" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> <b>Rs${(r.amount||deposit).toLocaleString()}</b> added to <b>${fmtMonthLabel(r.month)}</b> salary. ${r.signed?'Signed on '+r.sign_date:'Awaiting staff signature.'}</div>
+      ${r.released_by?`<div class="sr"><span style="color:var(--text2)">Added by</span><span>${r.released_by||'—'} · ${r.release_date||''}</span></div>`:''}`:`<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-info-circle"></i> Security refund of <b>Rs${deposit.toLocaleString()}</b> not yet added to salary.</div>`}
       <div class="fsep"></div>
       <button class="btn brd" style="width:100%;padding:10px" onclick="reinstateStaff('${s.id}')"><i class="ti ti-arrow-back-up"></i> Reinstate (cancel leaving)</button>`;
     }
@@ -4195,9 +4165,22 @@ async function markLeft(id){
   if(!lm){ toast('Pick the last working month.','error'); return; }
   st.left_month=lm;
   st.left_date=document.getElementById('left_date').value||'';
-  st.sec_refund_eligible=!!document.getElementById('left_eligible').checked;
-  await saveField('staff_users'); closeModal();
-  toast(st.name+' marked as left ('+fmtMonthLabel(lm)+').','success');
+  st.sec_refund_eligible=true;
+  await saveField('staff_users');
+  // Auto-add security refund to the selected month's salary
+  const amount=securityRefundAmount(id);
+  const refundMonthEl=document.getElementById('refund_month');
+  const rm=refundMonthEl?refundMonthEl.value:'';
+  if(amount>0 && rm){
+    if(!DB.security_refunds) DB.security_refunds={};
+    DB.security_refunds[id]={amount, month:rm, released:true, release_date:new Date().toLocaleDateString(), released_by:(APP.user.username||APP.user.role), signed:false, sign_date:''};
+    await saveField('security_refunds');
+    closeModal();
+    toast(st.name+' marked as left. Security deposit of Rs'+amount.toLocaleString()+' added to '+fmtMonthLabel(rm)+' salary.','success');
+  } else {
+    closeModal();
+    toast(st.name+' marked as left ('+fmtMonthLabel(lm)+').','success');
+  }
 }
 async function reinstateStaff(id){
   const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
