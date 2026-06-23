@@ -538,7 +538,6 @@ let DB = {
   staff_releases: {},  // {month: {staffId: date}}  — per-person salary release
   release_delegations: {}, // {month: {staffId: true}} — director delegated this release to Admin
   release_by: {},      // {month: {staffId: 'Admin'|'Director'}} — who actually released it
-  security_refunds: {},// {staffId: {amount, month, released, release_date, released_by, signed, sign_date}} — security deposit refund for staff who have left
   settings: {},        // app-wide settings, e.g. {portal_name:'PDC&S Portal'}
   monthly_additions: {}, // {month: [{id, name, section, salary, remarks}]} — one-time/temporary staff for a month
 };
@@ -557,7 +556,7 @@ const SECTIONS = ['Admin','School','College','Domestic'];
 // ─── STORAGE (Firebase Realtime Database) ─────────────────────
 const DB_FIELDS = ['staff_users','attendance','salary_sheets','custom_deds','custom_earnings',
   'approvals','releases','receipts','leave_overrides','approver_map',
-  'staff_approvals','staff_releases','release_delegations','release_by','security_refunds','approver_config','settings','monthly_additions'];
+  'staff_approvals','staff_releases','release_delegations','release_by','approver_config','settings','monthly_additions'];
 
 // Firebase drops empty objects/arrays (returns null) — restore the right empty shape.
 function normalizeField(field, val){
@@ -626,15 +625,12 @@ async function loadDB(){
       if(f==='settings') cacheBranding(); // keep the splash logo/name fresh for next load
       // Don't re-render while the staff member is mid-signature, or a remote
       // sync would wipe the canvas. It'll refresh on their next action.
-      if(APP.user && !(APP.modal&&(APP.modal.type==='sign_pad'||APP.modal.type==='refund_sign'))) R();
+      if(APP.user && !(APP.modal&&APP.modal.type==='sign_pad')) R();
     });
   });
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────
-// A staff account is closed (login_disabled) once they've left AND signed for
-// their security refund — there's nothing left for them to do in the portal.
-function loginDisabled(x){ return !!(x && x.login_disabled); }
 // SYSTEM_USERS (the Director) live in code, not the database, so their password
 // change is persisted as an override in settings.system_users[id].password.
 function effPw(u){ return u ? ((((DB.settings||{}).system_users||{})[u.id]||{}).password || u.password) : ''; }
@@ -644,7 +640,7 @@ const RECOVERY_DEFAULT='PDCS-RESET-2026';
 function recoveryCode(){ return (((DB.settings||{}).recovery_code)||'').trim() || RECOVERY_DEFAULT; }
 function findUser(u,p){
   return SYSTEM_USERS.find(x=>x.username===u&&effPw(x)===p)
-      || DB.staff_users.find(x=>x.username===u&&x.password===p&&!loginDisabled(x))
+      || DB.staff_users.find(x=>x.username===u&&x.password===p)
       || null;
 }
 // Find any account by username, ignoring password (used by the recovery flow).
@@ -1013,13 +1009,6 @@ function calcSlip(staffId, month){
 
   const totalDed=baseDed+secDed;
 
-  // Security refund — if the director released a refund for this month, add it as an earning.
-  let secRefund=0;
-  const sr=(DB.security_refunds||{})[staffId];
-  if(sr && sr.released && sr.month===month){
-    secRefund=sr.amount||0;
-  }
-
   return {
     id:staffId, name:st.name, section:st.section, designation:st.designation,
     salary:sal, days,
@@ -1030,8 +1019,8 @@ function calcSlip(staffId, month){
     ppd, netBeforeSec:Math.round(netBeforeSec),
     secDed:Math.round(secDed), secPct:st.security_pct||10,
     secCompleted, secRemaining:Math.round(secRemaining), secTotal:Math.round(secTotal),
-    cdTotal:Math.round(cdTotal), ceTotal:Math.round(ceTotal), secRefund:Math.round(secRefund),
-    deduction:Math.round(totalDed), net:Math.round(sal+ceTotal+secRefund-totalDed), cds, ces, month,
+    cdTotal:Math.round(cdTotal), ceTotal:Math.round(ceTotal),
+    deduction:Math.round(totalDed), net:Math.round(sal+ceTotal-totalDed), cds, ces, month,
   };
 }
 
@@ -1149,36 +1138,7 @@ function issuedBy(m, sid, who){
   return releaseParts(m, sid).filter(p=>p.by===who).reduce((a,p)=>a+(p.amount||0), 0);
 }
 
-// ─── SECURITY DEPOSIT REFUND (for staff who have left) ────────
-// Refund amount = the whole security deposit collected from this person so far.
-function securityRefundAmount(sid){ return calcTotalSecurityDeducted(sid); }
-function securityRefund(sid){ return (DB.security_refunds||{})[sid]||null; }
-// Eligible only if the admin ticked it when marking the person as left.
-function refundEligible(st){ return hasLeft(st) && !!st.sec_refund_eligible; }
-// Where the refund shows: the last working month if the admin paid it there,
-// otherwise it defaults to the month AFTER the last working month.
-function refundMonth(st){
-  const r=securityRefund(st.id);
-  return (r&&r.month) || nextMonth(st.left_month);
-}
-// A left+eligible member who still has a deposit on file but no fully-signed refund.
-function refundPending(st){
-  if(!refundEligible(st)) return false;
-  if(securityRefundAmount(st.id)<=0) return false; // nothing was ever deducted
-  const r=securityRefund(st.id);
-  return !(r && r.signed);
-}
-// Status label for the director's Left-Staff panel.
-function refundStatus(st){
-  if(!hasLeft(st)) return null;
-  if(!st.sec_refund_eligible) return {label:'Not eligible', cls:'bx', color:'var(--text3)'};
-  if(securityRefundAmount(st.id)<=0) return {label:'No deposit', cls:'bx', color:'var(--text3)'};
-  const r=securityRefund(st.id);
-  if(r && r.signed)   return {label:'Refunded & signed', cls:'bg', color:'#34d399'};
-  if(r && r.released) return {label:'Released — awaiting signature', cls:'by', color:'#fbbf24'};
-  return {label:'Pending release', cls:'br', color:'#f87171'};
-}
-// Visual meta for an approval status.
+// ─── APPROVAL META ──────────────────────────────────────────
 function apprMeta(status){
   return ({
     approved:    {cls:'bg', icon:'check', label:'Approved',    color:'#34d399'},
@@ -1846,10 +1806,9 @@ function pgStaffMgmt(){
       const nextIncr = getNextIncrementDate(s);
       const ist = incrStatus(nextIncr);
       const isManualIncr = !!s.increment_date;
-      const refSt = refundStatus(s);
       return `<tr class="staff-row" data-search="${ds(s.id+' '+s.name+' '+s.section+' '+s.designation)}" style="${hasLeft(s)?'opacity:.72':''}">
         <td><code style="font-size:10px;color:var(--text2)">${s.id}</code></td>
-        <td style="white-space:nowrap">${s.name}${hasLeft(s)?` <span class="badge bx" title="Last working month: ${fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i> Left ${fmtMonthLabel(s.left_month)}</span>${refSt?` <span class="badge ${refSt.cls}" title="Security refund">${refSt.label}</span>`:''}${loginDisabled(s)?` <span class="badge bx" title="Account closed — login disabled"><i class="ti ti-lock"></i> Closed</span>`:''}`:''}${hasAdminPrivs(s)?` <span class="badge bb" title="Granted admin access"><i class="ti ti-shield-lock"></i> Admin access</span>`:''}</td>
+        <td style="white-space:nowrap">${s.name}${hasLeft(s)?` <span class="badge bx" title="Last working month: ${fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i> Left ${fmtMonthLabel(s.left_month)}</span>`:''}${hasAdminPrivs(s)?` <span class="badge bb" title="Granted admin access"><i class="ti ti-shield-lock"></i> Admin access</span>`:''}</td>
         <td style="color:var(--text2)">${s.designation}</td>
         <td style="white-space:nowrap">Rs${(s.salary||0).toLocaleString()}${s.last_increment?` <span class="badge bg" title="Incremented to Rs${(s.last_increment.to||0).toLocaleString()} effective ${fmtMonthLabel(s.last_increment.month)} (${s.last_increment.type==='amt'?'+Rs'+(s.last_increment.value||0).toLocaleString():'+'+(s.last_increment.value||0)+'%'})"><i class="ti ti-trending-up"></i></span>`:''}</td>
         <td class="tm" style="white-space:nowrap">${fmtJoined(s)}</td>
@@ -1878,7 +1837,6 @@ function pgStaffMgmt(){
         ${ed?`<td style="white-space:nowrap">
           <button class="btn bou bsm" onclick="openModal('edit_staff','${s.id}')"><i class="ti ti-edit"></i></button>
           <button class="btn bou bsm" title="Grant admin privileges${hasAdminPrivs(s)?' (granted)':''}" onclick="openModal('staff_privs','${s.id}')"><i class="ti ti-shield-lock"${hasAdminPrivs(s)?' style="color:#34d399"':''}></i></button>
-          <button class="btn bou bsm" title="${hasLeft(s)?'Manage leaving / security refund':'Mark this staff member as left'}" onclick="openModal('mark_left','${s.id}')"><i class="ti ti-logout"></i></button>
           <button class="btn brd bsm" onclick="deleteUser('${s.id}')"><i class="ti ti-trash"></i></button>
         </td>`:''}
       </tr>`;
@@ -2017,7 +1975,6 @@ function salaryTableHTML(list, m, opts={}){
       <th>Security</th>
       <th>Custom Ded</th>
       <th style="color:#34d399">Custom Earn</th>`:''}
-      <th style="color:#34d399">Sec. Refund</th>
       <th>Total Ded.</th>
       <th>Net Pay</th>
       ${act?`<th>${opts.actionHeader||''}</th>`:''}
@@ -2042,7 +1999,6 @@ function salaryTableHTML(list, m, opts={}){
             <td style="color:#f87171">${sl.secDed>0?`-Rs${sl.secDed.toLocaleString()}${sl.secCompleted?' ✓':''}`:s.security?'<span class="badge bg" style="font-size:9px">Done</span>':'—'}</td>
             <td style="color:#f87171">${sl.cdTotal>0?'-Rs'+sl.cdTotal.toLocaleString():'—'}</td>
             <td style="color:#34d399">${sl.ceTotal>0?'+Rs'+sl.ceTotal.toLocaleString():'—'}</td>`:''}
-            <td style="color:#34d399;font-weight:600">${sl.secRefund>0?'+Rs'+sl.secRefund.toLocaleString():'—'}</td>
             <td style="color:#f87171;font-weight:600">-Rs${sl.deduction.toLocaleString()}</td>
             <td style="color:#34d399;font-weight:700">Rs${sl.net.toLocaleString()}</td>
             ${act?`<td style="white-space:nowrap">${opts.actionCell(s,sl)}</td>`:''}
@@ -2262,35 +2218,6 @@ function pgApprovals(){
   </div>`;
 }
 
-// Director/Admin panel: every staff member who has left and is owed (or has been
-// paid) a security deposit refund, with its release + signature status. Always
-// visible until the refund is released and signed, so it never gets lost.
-function securityRefundsCard(){
-  const m=APP.month;
-  const released=getStaffOnly().filter(s=>{
-    const r=securityRefund(s.id);
-    return r&&r.released&&r.month===m;
-  });
-  if(!released.length) return '';
-  const rows=released.map(s=>{
-    const r=securityRefund(s.id);
-    const amt=r.amount||securityRefundAmount(s.id);
-    return `<div class="arow" style="border-left:3px solid #34d399">
-      <div class="arow-info">
-        <div style="font-size:13px;font-weight:600">${s.name} <span class="tm" style="font-size:11px">· ${s.section}</span></div>
-        <div class="tm" style="font-size:11px">Left ${fmtMonthLabel(s.left_month)}</div>
-      </div>
-      <div style="font-weight:700;color:#34d399;font-size:14px">+Rs${amt.toLocaleString()}</div>
-      ${r.signed?`<span class="badge bg"><i class="ti ti-check"></i> Signed</span>`:`<span class="badge by"><i class="ti ti-clock"></i> Awaiting signature</span>`}
-    </div>`;
-  }).join('');
-  return `<div class="card" style="border-color:#34d39955">
-    <div class="ct"><i class="ti ti-shield-lock" style="color:#34d399"></i> Security Deposit Refunds — ${fmtMonthLabel(m)}</div>
-    <div class="alert as" style="font-size:11px"><i class="ti ti-check-circle"></i> Security deposit has been added to this month's salary for the staff below.</div>
-    ${rows}
-  </div>`;
-}
-
 // Status card listing staff whose salary has been incremented (latest increment
 // per person), so the Director/Admin can see at a glance who got a raise.
 function recentIncrementsCard(){
@@ -2323,7 +2250,7 @@ function pgRelease(){
   const rcpts=DB.receipts[m]||{};
   const staff=staffInMonth(m);
   const rcvd=Object.keys(rcpts).length;
-  return recentIncrementsCard()+securityRefundsCard()+`<div class="card">
+  return recentIncrementsCard()+`<div class="card">
     <div class="ct"><i class="ti ti-cash"></i> Release Salary — ${m}</div>
     ${!ap.full&&!rel.released?`<div class="alert aw"><i class="ti ti-alert-triangle"></i> ${ap.count}/${APPROVER_LIST.length} approvals. Missing: ${APPROVER_LIST.filter(a=>!slotComplete(m,a.key)).map(a=>a.label).join(', ')}</div>`:''}
     ${ap.full&&!rel.released?`<div class="alert as"><i class="ti ti-check-circle"></i> All approved! Ready to release.</div>
@@ -2401,7 +2328,7 @@ function pgApproveRelease(){
              : `<button class="btn bou bsm" onclick="delegateRelease('${m}','${s.id}')" title="Let Admin release this salary"><i class="ti ti-user-share"></i> Delegate</button>`}`}`;
   };
 
-  return recentIncrementsCard()+securityRefundsCard()+`<div class="card">
+  return recentIncrementsCard()+`<div class="card">
     <div class="ct"><i class="ti ti-shield-check"></i> Salary Approval &amp; Release
       ${monthPicker(m,{nav:true,max:lastSheetMonth(),style:'width:160px;margin-left:auto'})}
     </div>
@@ -2658,33 +2585,6 @@ function pgMyHome(){
        `}
     </div>
 
-    ${(()=>{
-      // Security deposit refund card — shown once the staff member has left and is owed (or paid) their deposit back.
-      if(!hasLeft(st)) return '';
-      const refAmt=securityRefundAmount(st.id);
-      const r=securityRefund(st.id);
-      if(!refundEligible(st) || refAmt<=0){
-        return r?'' : `<div class="card" style="margin-bottom:0;border-color:#64748b55">
-          <div class="ct"><i class="ti ti-logout"></i> Leaving — ${fmtMonthLabel(st.left_month)}</div>
-          <div class="alert ai" style="margin-bottom:0;font-size:11px"><i class="ti ti-info-circle"></i> Your last working month is <b>${fmtMonthLabel(st.left_month)}</b>.${refAmt>0?' No security deposit refund applies.':''}</div>
-        </div>`;
-      }
-      const amt=(r&&r.amount!=null)?r.amount:refAmt;
-      return `<div class="card" style="margin-bottom:0;border-color:#f59e0b66">
-        <div class="ct"><i class="ti ti-shield-lock" style="color:#fbbf24"></i> Security Deposit Refund</div>
-        <div style="font-size:26px;font-weight:800;color:#34d399;margin-bottom:6px">Rs${amt.toLocaleString()}</div>
-        <div class="sr"><span style="color:var(--text2)">For</span><span>${fmtMonthLabel(refundMonth(st))}</span></div>
-        ${r&&r.signed
-          ? `<div class="sr"><span style="color:var(--text2)">Status</span><span class="badge bg"><i class="ti ti-circle-check"></i> Refunded &amp; signed</span></div>
-             <div class="tm" style="margin-top:8px"><i class="ti ti-signature"></i> Signed on ${r.sign_date||'—'}.</div>`
-          : (r&&r.released)
-            ? `<div class="sr"><span style="color:var(--text2)">Status</span><span class="badge by"><i class="ti ti-clock"></i> Released — please sign</span></div>
-               <button class="btn bgr" style="width:100%;margin-top:12px;padding:11px" onclick="openRefundSign('${st.id}')"><i class="ti ti-signature"></i> Sign refund receipt</button>`
-            : `<div class="sr"><span style="color:var(--text2)">Status</span><span class="badge bx"><i class="ti ti-clock"></i> Being processed</span></div>
-               <div class="tm" style="margin-top:8px"><i class="ti ti-info-circle"></i> Your security deposit will be refunded shortly. You'll sign a receipt here once it's released.</div>`}
-      </div>`;
-    })()}
-
     <div class="card" style="margin-bottom:0">
       <div class="ct"><i class="ti ti-id-badge-2"></i> Employment Details</div>
       <div class="sr"><span style="color:var(--text2)">Designation</span><span>${st.designation}</span></div>
@@ -2914,7 +2814,6 @@ function slipHTML(sl,signed,m,uid,canSign){
     <div class="div"></div>
     <div class="sr"><span>Basic Salary</span><span>Rs${sl.salary.toLocaleString()}</span></div>
     ${sl.ces&&sl.ces.length?sl.ces.map(c=>`<div class="sr"><span style="color:#34d399">${c.label}</span><span style="color:#34d399">+Rs${c.amount.toLocaleString()}</span></div>`).join(''):''}
-    ${sl.secRefund>0?`<div class="sr"><span style="color:#34d399">Security Deposit Refund</span><span style="color:#34d399;font-weight:700">+Rs${sl.secRefund.toLocaleString()}</span></div>`:''}
     ${sl.lateDays>0?`<div class="sr"><span style="color:#f87171">Day Late (${sl.tLate} lates − 2 allowed = ${sl.effectiveLates} late)</span><span class="dd">-Rs${Math.round(sl.lateDays*sl.ppd).toLocaleString()}</span></div>`:''}
     ${sl.hlDays>0?`<div class="sr"><span style="color:#f87171">Half Leave (${sl.hlRaw} half leave)</span><span class="dd">-Rs${Math.round(sl.hlDays*sl.ppd).toLocaleString()}</span></div>`:''}
     ${sl.dleaDays>0?`<div class="sr"><span style="color:#f87171">Day Leave (${sl.absent} absent + ${sl.casualLeave} casual leave)</span><span class="dd">-Rs${Math.round(sl.dleaDays*sl.ppd).toLocaleString()}</span></div>`:''}
@@ -3102,7 +3001,7 @@ function downloadStaffDetailsCSV(){
   }
   if(!staffToExport.length){toast('No staff members found.','warn');return;}
   
-  const headers=['ID','Name','Username','Section','Designation','Basic Salary','Join Month','Increment Date','Security','Security %','Bank Name','Account Title','Account No','Left Month','Status'];
+  const headers=['ID','Name','Username','Section','Designation','Basic Salary','Join Month','Increment Date','Security','Security %','Bank Name','Account Title','Account No'];
   const rows=staffToExport.map(s=>{
     return [
       s.id,
@@ -3117,9 +3016,7 @@ function downloadStaffDetailsCSV(){
       s.security_pct||0,
       s.bank_name||'',
       s.account_title||'',
-      s.account_no||'',
-      s.left_month||'',
-      hasLeft(s)?'Left':'Active'
+      s.account_no||''
     ].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',');
   });
   
@@ -3396,51 +3293,6 @@ function renderModal(){
     </div>`;
   }
 
-  if(type==='mark_left'){
-    const s=DB.staff_users.find(x=>x.id===data)||{};
-    const deposit=securityRefundAmount(s.id);
-    const left=hasLeft(s);
-    const r=securityRefund(s.id);
-    const nowM=new Date().toISOString().slice(0,7);
-    const nextM=nextMonth(nowM);
-    if(!left){
-      // ── Mark a staff member as having LEFT ──
-      c=`<div class="mt">Mark as Left — ${s.name} <button class="xbtn" onclick="closeModal()">×</button></div>
-      <div class="alert ai" style="font-size:11px;margin-bottom:14px"><i class="ti ti-info-circle"></i> <span>Set the staff member's <b>last working month</b>. They'll receive a normal salary up to that month (with <b>no security deduction</b> in that final month).</span></div>
-      <label class="lbl">Last Working Month</label>
-      <div style="margin-bottom:12px">${monthPicker(s.left_month||nowM,{id:'left_month',style:'width:100%'})}</div>
-      <label class="lbl">Last Working Date <span style="color:var(--text4);font-size:10px">(optional)</span></label>
-      <div style="margin-bottom:12px">${datePicker(s.left_date||'',{id:'left_date',style:'width:100%'})}</div>
-      ${deposit>0?`<div class="fsep"><i class="ti ti-shield-lock"></i> Security Deposit Refund</div>
-      <div class="sr"><span style="color:var(--text2)">Deposit to refund</span><span style="font-weight:700;color:#34d399">Rs${deposit.toLocaleString()}</span></div>
-      <label class="lbl">Add refund to which month's salary?</label>
-      <div style="margin-bottom:12px">${monthPicker(nextM,{id:'refund_month',style:'width:100%'})}</div>
-      <div class="alert as" style="font-size:11px;margin-bottom:12px"><i class="ti ti-check-circle"></i> The full <b>Rs${deposit.toLocaleString()}</b> security deposit will be added to that month's salary automatically.</div>`:''}
-      <button class="btn bgr" style="width:100%;padding:11px" onclick="markLeft('${s.id}')"><i class="ti ti-logout"></i> Mark as Left</button>`;
-    } else {
-      // ── Already left ──
-      const rMonth=r&&r.month?r.month:nextMonth(s.left_month);
-      const hasRefund=r&&r.released;
-      const canEdit=APP.user.role==='director'||APP.user.role==='admin';
-      c=`<div class="mt">Leaving Details — ${s.name} <button class="xbtn" onclick="closeModal()">×</button></div>
-      <div class="sr"><span style="color:var(--text2)">Last working month</span><span style="font-weight:700">${fmtMonthLabel(s.left_month)}</span></div>
-      ${s.left_date?`<div class="sr"><span style="color:var(--text2)">Last working date</span><span>${s.left_date}</span></div>`:''}
-      <div class="sr"><span style="color:var(--text2)">Security deposit</span><span style="font-weight:700">Rs${deposit.toLocaleString()}</span></div>
-      <div class="fsep"><i class="ti ti-shield-lock"></i> Security Refund</div>
-      ${hasRefund
-        ? `<div class="alert as" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> <b>Rs${(r.amount||deposit).toLocaleString()}</b> added to <b>${fmtMonthLabel(r.month)}</b> salary. ${r.signed?'Signed on '+r.sign_date:'Awaiting staff signature.'}</div>
-           ${r.released_by?`<div class="sr"><span style="color:var(--text2)">Added by</span><span>${r.released_by||'—'} · ${r.release_date||''}</span></div>`:''}`
-        : deposit>0
-          ? `<div class="sr"><span style="color:var(--text2)">Amount</span><span style="font-weight:700;color:#34d399">Rs${deposit.toLocaleString()}</span></div>
-             <label class="lbl">Add refund to which month's salary?</label>
-             <div style="margin-bottom:10px">${monthPicker(rMonth,{id:'refund_month',style:'width:100%'})}</div>
-             ${canEdit?`<button class="btn bgr" style="width:100%;padding:11px;margin-bottom:8px" onclick="addSecurityRefund('${s.id}')"><i class="ti ti-send"></i> Add Rs${deposit.toLocaleString()} to salary</button>`:''}`
-          : `<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-info-circle"></i> No security deposit was collected — nothing to refund.</div>`}
-      <div class="fsep"></div>
-      <button class="btn brd" style="width:100%;padding:10px" onclick="reinstateStaff('${s.id}')"><i class="ti ti-arrow-back-up"></i> Reinstate (cancel leaving)</button>`;
-    }
-  }
-
   if(type==='set_incr'){
     const s=DB.staff_users.find(x=>x.id===data)||{};
     const autoNext=getNextIncrementDate({...s, increment_date:null, increment_applied_until:null});
@@ -3710,37 +3562,10 @@ function renderModal(){
     </div>`;
   }
 
-  // Staff signs a receipt acknowledging their security deposit refund.
-  if(type==='refund_sign'){
-    const st=DB.staff_users.find(x=>x.id===data)||{};
-    const r=securityRefund(data)||{};
-    c=`<div class="mt">Sign Security Refund Receipt <button class="xbtn" onclick="closeModal()">×</button></div>
-    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Draw your signature below to confirm you have received your security deposit refund of <b>Rs${(r.amount||0).toLocaleString()}</b>. This is your acknowledgement and cannot be undone.</div>
-    <div style="background:#fff;border:2px dashed var(--text2);border-radius:10px;overflow:hidden">
-      <canvas id="sigpad" style="width:100%;height:180px;display:block;touch-action:none;cursor:crosshair" onpointerdown="sigStart(event)" onpointermove="sigMove(event)" onpointerup="sigEnd(event)" onpointerleave="sigEnd(event)"></canvas>
-    </div>
-    <div class="tm" style="font-size:10px;text-align:center;margin-top:4px">Sign with your mouse or finger</div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn bou" style="flex:1;padding:10px" onclick="sigClear()"><i class="ti ti-eraser"></i> Clear</button>
-      <button class="btn bgr" style="flex:2;padding:10px" onclick="saveRefundSignature('${data}')"><i class="ti ti-check"></i> Confirm &amp; Submit Signature</button>
-    </div>`;
-  }
-
   // Director / approver views the drawn signature on a confirmed receipt.
   if(type==='view_sig'){
     const [sid,mm]=(data||'').split('|');
     const st=DB.staff_users.find(x=>x.id===sid)||{};
-    if(mm==='refund'){
-      // Security-deposit refund signature (no monthly receipt record).
-      const r=securityRefund(sid)||{};
-      c=`<div class="mt">Security Refund Signature — ${st.name||''} <button class="xbtn" onclick="closeModal()">×</button></div>
-      <div class="sr"><span style="color:var(--text2)">Refund amount</span><span style="font-weight:700">Rs${(r.amount||0).toLocaleString()}</span></div>
-      <div class="sr"><span style="color:var(--text2)">Signed on</span><span>${r.sign_date||'—'}</span></div>
-      ${r.signed
-        ?`<div style="margin-top:12px;text-align:center"><div class="tm" style="font-size:10px;margin-bottom:6px">Signed by ${st.name||'staff member'}</div>
-           <div id="sigbox" class="tm" style="padding:20px"><i class="ti ti-loader"></i> Loading signature…</div></div>`
-        :'<div class="alert aw" style="margin-top:10px;font-size:11px"><i class="ti ti-info-circle"></i> Not signed yet.</div>'}`;
-    } else {
     const rec=getReceipt(mm,sid);
     c=`<div class="mt">Receipt Signature — ${st.name||''} <button class="xbtn" onclick="closeModal()">×</button></div>
     <div class="sr"><span style="color:var(--text2)">Month</span><span>${mm}</span></div>
@@ -3749,7 +3574,6 @@ function renderModal(){
       ?`<div style="margin-top:12px;text-align:center"><div class="tm" style="font-size:10px;margin-bottom:6px">Signed by ${st.name||'staff member'}</div>
          <div id="sigbox" class="tm" style="padding:20px"><i class="ti ti-loader"></i> Loading signature…</div></div>`
       :'<div class="alert aw" style="margin-top:10px;font-size:11px"><i class="ti ti-info-circle"></i> No signature image on file (confirmed before signatures were enabled).</div>'}`;
-    }
   }
 
   if(type==='slip'||type==='slip_ro'){
@@ -3918,7 +3742,7 @@ function restoreSession(){
   let id; try{ id=localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY); }catch(e){}
   if(!id) return;
   const found=SYSTEM_USERS.find(x=>x.id===id)||DB.staff_users.find(x=>x.id===id);
-  if(found&&!loginDisabled(found)){
+  if(found){
     APP.user=found;
     APP.tab=found.role==='staff'?'my_home':'dashboard';
     applyStaffDefaultMonth(found);
@@ -3940,10 +3764,6 @@ function login(){
   const found=findUser(u,p);
   const e=document.getElementById('lerr');
   if(found){signIn(found);}
-  else if(DB.staff_users.find(x=>x.username===u&&x.password===p&&loginDisabled(x))){
-    toast('This account has been closed — your security refund was completed.','info');
-    if(e) e.style.display='block';
-  }
   else if(e) e.style.display='block';
 }
 function ql(u,p){const f=findUser(u,p);if(f){signIn(f);}}
@@ -4163,94 +3983,7 @@ async function editStaff(id){
 async function deleteUser(id){
   if(!await confirmDialog('Delete this account?')) return;
   DB.staff_users=DB.staff_users.filter(u=>u.id!==id);
-  if(DB.security_refunds&&DB.security_refunds[id]){ delete DB.security_refunds[id]; removeSigImage('refund',id); await saveField('security_refunds'); }
   await saveField('staff_users');R();
-}
-
-// ─── STAFF LEAVING / SECURITY REFUND ──────────────────────────
-async function markLeft(id){
-  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
-  const lm=document.getElementById('left_month').value;
-  if(!lm){ toast('Pick the last working month.','error'); return; }
-  st.left_month=lm;
-  st.left_date=document.getElementById('left_date').value||'';
-  st.sec_refund_eligible=true;
-  await saveField('staff_users');
-  // Auto-add security refund to the selected month's salary
-  const amount=securityRefundAmount(id);
-  const refundMonthEl=document.getElementById('refund_month');
-  const rm=refundMonthEl?refundMonthEl.value:'';
-  if(amount>0 && rm){
-    if(!DB.security_refunds) DB.security_refunds={};
-    DB.security_refunds[id]={amount, month:rm, released:true, release_date:new Date().toLocaleDateString(), released_by:(APP.user.username||APP.user.role), signed:false, sign_date:''};
-    await saveField('security_refunds');
-    closeModal();
-    toast(st.name+' marked as left. Security deposit of Rs'+amount.toLocaleString()+' added to '+fmtMonthLabel(rm)+' salary.','success');
-  } else {
-    closeModal();
-    toast(st.name+' marked as left ('+fmtMonthLabel(lm)+').','success');
-  }
-}
-async function addSecurityRefund(id){
-  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
-  const amount=securityRefundAmount(id);
-  if(amount<=0){ toast('No security deposit to refund.','info'); return; }
-  const monthEl=document.getElementById('refund_month');
-  const rm=monthEl?monthEl.value:'';
-  if(!rm){ toast('Select a month for the refund.','error'); return; }
-  if(!await confirmDialog('Add Rs'+amount.toLocaleString()+' security deposit to '+fmtMonthLabel(rm)+' salary for '+st.name+'?')) return;
-  if(!DB.security_refunds) DB.security_refunds={};
-  DB.security_refunds[id]={amount, month:rm, released:true, release_date:new Date().toLocaleDateString(), released_by:(APP.user.username||APP.user.role), signed:false, sign_date:''};
-  await saveField('security_refunds'); closeModal();
-  toast('Rs'+amount.toLocaleString()+' security deposit added to '+fmtMonthLabel(rm)+' salary for '+st.name+'.','success');
-}
-async function reinstateStaff(id){
-  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
-  if(!await confirmDialog('Reinstate '+st.name+'? This cancels their leaving status and any pending security refund, and re-enables their login.')) return;
-  delete st.left_month; delete st.left_date; delete st.sec_refund_eligible; delete st.login_disabled;
-  if(DB.security_refunds&&DB.security_refunds[id]){ delete DB.security_refunds[id]; removeSigImage('refund',id); await saveField('security_refunds'); }
-  await saveField('staff_users'); closeModal();
-}
-async function setRefundEligible(id, val){
-  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
-  st.sec_refund_eligible=!!val;
-  // Turning eligibility off cancels any un-signed release.
-  if(!val && DB.security_refunds&&DB.security_refunds[id] && !DB.security_refunds[id].signed){
-    delete DB.security_refunds[id]; removeSigImage('refund',id); await saveField('security_refunds');
-  }
-  await saveField('staff_users'); R();
-}
-async function saveRefundMonth(id){
-  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
-  const monthEl=document.getElementById('refund_month');
-  const month=(monthEl&&monthEl.value)||refundMonth(st);
-  if(!DB.security_refunds) DB.security_refunds={};
-  DB.security_refunds[id]={month, released:false, signed:false};
-  await saveField('security_refunds'); R();
-  toast('Refund month saved as '+fmtMonthLabel(month)+'.','success');
-}
-async function releaseSecurityRefund(id){
-  if(APP.user.role!=='director'){ toast('Only the Director can release a refund.','error'); return; }
-  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
-  if(!refundEligible(st)){ toast('This staff member is not eligible for a security refund.','error'); return; }
-  const amount=securityRefundAmount(id);
-  if(amount<=0){ toast('No security deposit was collected — nothing to refund.','info'); return; }
-  const existing=(DB.security_refunds||{})[id];
-  const monthEl=document.getElementById('refund_month');
-  const month=(monthEl&&monthEl.value)||((existing&&existing.month)||refundMonth(st));
-  if(!await confirmDialog('Release the security deposit refund of Rs'+amount.toLocaleString()+' for '+st.name+' in '+fmtMonthLabel(month)+'?\n\nThe staff member will then sign a receipt acknowledging it.')) return;
-  if(!DB.security_refunds) DB.security_refunds={};
-  DB.security_refunds[id]={amount, month, released:true, release_date:new Date().toLocaleDateString(), released_by:(APP.user.username||APP.user.role), signed:false, sign_date:''};
-  await saveField('security_refunds'); closeModal();
-  toast('Security refund of Rs'+amount.toLocaleString()+' released for '+st.name+'.','success');
-}
-async function undoSecurityRefund(id){
-  if(APP.user.role!=='director'){ toast('Only the Director can undo a refund.','error'); return; }
-  const r=securityRefund(id); if(!r) return;
-  if(r.signed){ toast('This refund has already been signed and cannot be undone.','error'); return; }
-  if(!await confirmDialog('Undo the security refund release?')) return;
-  delete DB.security_refunds[id]; removeSigImage('refund',id);
-  await saveField('security_refunds'); closeModal();
 }
 
 async function saveAtt(sid,col,val,m){
@@ -4931,34 +4664,8 @@ async function saveSignature(){
   DB.receipts[m][sid]={date:new Date().toLocaleDateString(), by:APP.user.username||sid, sig:true};
   await saveField('receipts');closeModal();
 }
-// Staff opens the pad to sign for their security deposit refund.
-function openRefundSign(sid){
-  if(APP.user.role!=='staff'||APP.user.id!==sid){ toast('Only the staff member can sign their own receipt.','error');return; }
-  const r=securityRefund(sid);
-  if(!(r&&r.released)){ toast('Your security refund has not been released yet.','warn');return; }
-  if(r.signed){ toast('You have already signed for this refund.','info');return; }
-  APP.modal={type:'refund_sign',data:sid};R();
-  requestAnimationFrame(sigInitPad);
-}
-async function saveRefundSignature(sid){
-  if(APP.user.role!=='staff'||APP.user.id!==sid){ toast('Only the staff member can sign their own receipt.','error');return; }
-  const r=securityRefund(sid);
-  if(!(r&&r.released)){ toast('Your security refund has not been released yet.','warn');return; }
-  if(SIGPAD.empty){ toast('Please draw your signature before submitting.','warn');return; }
-  const c=document.getElementById('sigpad');if(!c) return;
-  const sig=compressSig(c);
-  await FDB.ref(sigPath('refund',sid)).set(sig);   // image stored at receipt_sigs/refund/<sid>
-  DB.security_refunds[sid]={...r, signed:true, sign_date:new Date().toLocaleDateString()};
-  await saveField('security_refunds');
-  // Their portal business is complete — close the account so they can no longer log in.
-  const st=DB.staff_users.find(s=>s.id===sid);
-  if(st){ st.login_disabled=true; await saveField('staff_users'); }
-  toast('Security refund receipt signed. Thank you! Your account is now closed.','success');
-  logout(); // sign out immediately; future logins are blocked
-}
 // Director / approver views a stored signature — image is fetched on demand.
 function openSigView(sid,m){APP.modal={type:'view_sig',data:sid+'|'+m};R();requestAnimationFrame(()=>loadSigView(m,sid));}
-function openRefundSigView(sid){APP.modal={type:'view_sig',data:sid+'|refund'};R();requestAnimationFrame(()=>loadSigView('refund',sid));}
 async function loadSigView(m,sid){
   if(!document.getElementById('sigbox')) return;
   const rec=getReceipt(m,sid);
