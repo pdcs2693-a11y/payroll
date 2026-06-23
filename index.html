@@ -3420,13 +3420,22 @@ function renderModal(){
     } else {
       // ── Already left ──
       const rMonth=r&&r.month?r.month:nextMonth(s.left_month);
+      const hasRefund=r&&r.released;
+      const canEdit=APP.user.role==='director'||APP.user.role==='admin';
       c=`<div class="mt">Leaving Details — ${s.name} <button class="xbtn" onclick="closeModal()">×</button></div>
       <div class="sr"><span style="color:var(--text2)">Last working month</span><span style="font-weight:700">${fmtMonthLabel(s.left_month)}</span></div>
       ${s.left_date?`<div class="sr"><span style="color:var(--text2)">Last working date</span><span>${s.left_date}</span></div>`:''}
       <div class="sr"><span style="color:var(--text2)">Security deposit</span><span style="font-weight:700">Rs${deposit.toLocaleString()}</span></div>
-      ${r&&r.released?`<div class="fsep"><i class="ti ti-shield-lock"></i> Security Refund</div>
-      <div class="alert as" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> <b>Rs${(r.amount||deposit).toLocaleString()}</b> added to <b>${fmtMonthLabel(r.month)}</b> salary. ${r.signed?'Signed on '+r.sign_date:'Awaiting staff signature.'}</div>
-      ${r.released_by?`<div class="sr"><span style="color:var(--text2)">Added by</span><span>${r.released_by||'—'} · ${r.release_date||''}</span></div>`:''}`:`<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-info-circle"></i> Security refund of <b>Rs${deposit.toLocaleString()}</b> not yet added to salary.</div>`}
+      <div class="fsep"><i class="ti ti-shield-lock"></i> Security Refund</div>
+      ${hasRefund
+        ? `<div class="alert as" style="font-size:11px;margin-bottom:12px"><i class="ti ti-circle-check" style="color:#34d399"></i> <b>Rs${(r.amount||deposit).toLocaleString()}</b> added to <b>${fmtMonthLabel(r.month)}</b> salary. ${r.signed?'Signed on '+r.sign_date:'Awaiting staff signature.'}</div>
+           ${r.released_by?`<div class="sr"><span style="color:var(--text2)">Added by</span><span>${r.released_by||'—'} · ${r.release_date||''}</span></div>`:''}`
+        : deposit>0
+          ? `<div class="sr"><span style="color:var(--text2)">Amount</span><span style="font-weight:700;color:#34d399">Rs${deposit.toLocaleString()}</span></div>
+             <label class="lbl">Add refund to which month's salary?</label>
+             <div style="margin-bottom:10px">${monthPicker(rMonth,{id:'refund_month',style:'width:100%'})}</div>
+             ${canEdit?`<button class="btn bgr" style="width:100%;padding:11px;margin-bottom:8px" onclick="addSecurityRefund('${s.id}')"><i class="ti ti-send"></i> Add Rs${deposit.toLocaleString()} to salary</button>`:''}`
+          : `<div class="alert ai" style="font-size:11px;margin-bottom:12px"><i class="ti ti-info-circle"></i> No security deposit was collected — nothing to refund.</div>`}
       <div class="fsep"></div>
       <button class="btn brd" style="width:100%;padding:10px" onclick="reinstateStaff('${s.id}')"><i class="ti ti-arrow-back-up"></i> Reinstate (cancel leaving)</button>`;
     }
@@ -4181,6 +4190,19 @@ async function markLeft(id){
     closeModal();
     toast(st.name+' marked as left ('+fmtMonthLabel(lm)+').','success');
   }
+}
+async function addSecurityRefund(id){
+  const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
+  const amount=securityRefundAmount(id);
+  if(amount<=0){ toast('No security deposit to refund.','info'); return; }
+  const monthEl=document.getElementById('refund_month');
+  const rm=monthEl?monthEl.value:'';
+  if(!rm){ toast('Select a month for the refund.','error'); return; }
+  if(!await confirmDialog('Add Rs'+amount.toLocaleString()+' security deposit to '+fmtMonthLabel(rm)+' salary for '+st.name+'?')) return;
+  if(!DB.security_refunds) DB.security_refunds={};
+  DB.security_refunds[id]={amount, month:rm, released:true, release_date:new Date().toLocaleDateString(), released_by:(APP.user.username||APP.user.role), signed:false, sign_date:''};
+  await saveField('security_refunds'); closeModal();
+  toast('Rs'+amount.toLocaleString()+' security deposit added to '+fmtMonthLabel(rm)+' salary for '+st.name+'.','success');
 }
 async function reinstateStaff(id){
   const st=DB.staff_users.find(s=>s.id===id); if(!st) return;
