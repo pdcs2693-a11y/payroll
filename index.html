@@ -540,6 +540,7 @@ let DB = {
   release_by: {},      // {month: {staffId: 'Admin'|'Director'}} — who actually released it
   security_refunds: {},// {staffId: {amount, month, released, release_date, released_by, signed, sign_date}} — security deposit refund for staff who have left
   settings: {},        // app-wide settings, e.g. {portal_name:'PDC&S Portal'}
+  monthly_additions: {}, // {month: [{id, name, section, salary, remarks}]} — one-time/temporary staff for a month
 };
 
 // Snapshot of seed defaults — used to backfill new fields (e.g. bank account)
@@ -556,7 +557,7 @@ const SECTIONS = ['Admin','School','College','Domestic'];
 // ─── STORAGE (Firebase Realtime Database) ─────────────────────
 const DB_FIELDS = ['staff_users','attendance','salary_sheets','custom_deds','custom_earnings',
   'approvals','releases','receipts','leave_overrides','approver_map',
-  'staff_approvals','staff_releases','release_delegations','release_by','security_refunds','approver_config','settings'];
+  'staff_approvals','staff_releases','release_delegations','release_by','security_refunds','approver_config','settings','monthly_additions'];
 
 // Firebase drops empty objects/arrays (returns null) — restore the right empty shape.
 function normalizeField(field, val){
@@ -1012,6 +1013,13 @@ function calcSlip(staffId, month){
 
   const totalDed=baseDed+secDed;
 
+  // Security refund — if the director released a refund for this month, add it as an earning.
+  let secRefund=0;
+  const sr=(DB.security_refunds||{})[staffId];
+  if(sr && sr.released && sr.month===month){
+    secRefund=sr.amount||0;
+  }
+
   return {
     id:staffId, name:st.name, section:st.section, designation:st.designation,
     salary:sal, days,
@@ -1022,8 +1030,8 @@ function calcSlip(staffId, month){
     ppd, netBeforeSec:Math.round(netBeforeSec),
     secDed:Math.round(secDed), secPct:st.security_pct||10,
     secCompleted, secRemaining:Math.round(secRemaining), secTotal:Math.round(secTotal),
-    cdTotal:Math.round(cdTotal), ceTotal:Math.round(ceTotal),
-    deduction:Math.round(totalDed), net:Math.round(sal+ceTotal-totalDed), cds, ces, month,
+    cdTotal:Math.round(cdTotal), ceTotal:Math.round(ceTotal), secRefund:Math.round(secRefund),
+    deduction:Math.round(totalDed), net:Math.round(sal+ceTotal+secRefund-totalDed), cds, ces, month,
   };
 }
 
@@ -1992,13 +2000,15 @@ function pgAttendance(){
 function salaryTableHTML(list, m, opts={}){
   const secs=SECTIONS.filter(sec=>list.some(s=>s.section===sec));
   const total=list.reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
+  const temps=(DB.monthly_additions||{})[m]||[];
+  const tempTotal=temps.reduce((a,t)=>a+(t.salary||0),0);
   const act=!!opts.actionCell;
   const detail=!opts.compact; // compact hides DL/H.L/D.Lea/Security/Custom columns
-  // columns before "Net Pay": #,Name,Sec,Desig,Basic [+6 detail cols] + Total Ded
-  const leadSpan=(detail?11:5)+1; // for the "Total Net Payroll" label colspan
-  const span=(detail?13:7)+(act?1:0);
+  // columns before "Net Pay": #,Name,Sec,Desig,Basic [+6 detail cols] + Sec.Refund + Total Ded
+  const leadSpan=(detail?12:6)+1; // for the "Total Net Payroll" label colspan
+  const span=(detail?14:8)+(act?1:0);
   return `${list.length>1?searchBox('sal-row','Search staff by name…'):''}<div style="overflow-x:auto">
-    <table style="min-width:${act?(detail?860:560):(detail?720:440)}px"><thead><tr>
+    <table style="min-width:${act?(detail?920:600):(detail?780:480)}px"><thead><tr>
       <th>#</th><th>Name</th><th>Sec</th><th>Desig.</th>
       <th>Basic</th>
       ${detail?`<th title="Day Late: total lates minus 2 free">D.Late</th>
@@ -2007,6 +2017,7 @@ function salaryTableHTML(list, m, opts={}){
       <th>Security</th>
       <th>Custom Ded</th>
       <th style="color:#34d399">Custom Earn</th>`:''}
+      <th style="color:#34d399">Sec. Refund</th>
       <th>Total Ded.</th>
       <th>Net Pay</th>
       ${act?`<th>${opts.actionHeader||''}</th>`:''}
@@ -2031,15 +2042,31 @@ function salaryTableHTML(list, m, opts={}){
             <td style="color:#f87171">${sl.secDed>0?`-Rs${sl.secDed.toLocaleString()}${sl.secCompleted?' ✓':''}`:s.security?'<span class="badge bg" style="font-size:9px">Done</span>':'—'}</td>
             <td style="color:#f87171">${sl.cdTotal>0?'-Rs'+sl.cdTotal.toLocaleString():'—'}</td>
             <td style="color:#34d399">${sl.ceTotal>0?'+Rs'+sl.ceTotal.toLocaleString():'—'}</td>`:''}
+            <td style="color:#34d399;font-weight:600">${sl.secRefund>0?'+Rs'+sl.secRefund.toLocaleString():'—'}</td>
             <td style="color:#f87171;font-weight:600">-Rs${sl.deduction.toLocaleString()}</td>
             <td style="color:#34d399;font-weight:700">Rs${sl.net.toLocaleString()}</td>
             ${act?`<td style="white-space:nowrap">${opts.actionCell(s,sl)}</td>`:''}
           </tr>`;
         })];
     }).join('')}
+    ${temps.length?`<tr><td colspan="${span}" style="background:var(--surface);border-top:2px solid var(--border);padding:8px 10px;font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-user-plus" style="margin-right:4px"></i> One-Time / Temporary Staff</td></tr>
+    ${temps.map((t,i)=>{
+      return `<tr class="sal-row" data-search="${ds(t.name+' '+t.section)}">
+        <td style="color:var(--text4)">${list.length+i+1}</td>
+        <td style="white-space:nowrap;font-weight:600">${t.name}</td>
+        <td><span class="sec-${t.section.toLowerCase()}">${t.section[0]}</span></td>
+        <td style="color:var(--text3);font-style:italic">${t.remarks||'One-time'}</td>
+        <td>Rs${(t.salary||0).toLocaleString()}</td>
+        ${detail?`<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`:''}
+        <td>—</td>
+        <td style="color:#f87171;font-weight:600">-Rs0</td>
+        <td style="color:#34d399;font-weight:700">Rs${(t.salary||0).toLocaleString()}</td>
+        ${act?`<td style="white-space:nowrap">${opts.actionCell(t,null)}</td>`:''}
+      </tr>`;
+    }).join('')}`:''}
     <tr style="background:var(--inset)">
       <td colspan="${leadSpan}" style="text-align:right;font-weight:700;color:var(--text);padding:10px">Total Net Payroll:</td>
-      <td style="color:#34d399;font-weight:700">Rs${total.toLocaleString()}</td>
+      <td style="color:#34d399;font-weight:700">Rs${(total+tempTotal).toLocaleString()}</td>
       ${act?'<td></td>':''}
     </tr>
     </tbody></table></div>`;
@@ -2097,6 +2124,8 @@ function pgSalarySheet(){
   const canGenerate=isDir||(isAdmin&&canEdit('salary_sheet'));
   const hasSheet=Object.keys(DB.salary_sheets[m]||{}).length>0;
   const mLabel=fmtMonthLabel(m);
+  const temps=(DB.monthly_additions||{})[m]||[];
+  const canAdd=isAdmin||isDir;
   return `${adminDelegateCard()}<div class="card">
     <div class="ct"><i class="ti ti-calculator"></i> Salary Sheet
       ${monthPicker(m,{nav:true,style:'width:160px;margin-left:auto'})}
@@ -2107,7 +2136,29 @@ function pgSalarySheet(){
     </div>`:''}
     ${!hasSheet?`<div class="alert ai"><i class="ti ti-info-circle"></i> No salary sheet generated for ${mLabel} yet.${canGenerate?' Click <b>Generate salary</b> above to create it.':''}</div>`:''}
     ${hasSheet?salaryTableHTML(staff,m):''}
-  </div>`;
+  </div>
+  ${canAdd?`<div class="card">
+    <div class="ct"><i class="ti ti-user-plus" style="color:#a78bfa"></i> One-Time / Temporary Staff
+      <span class="badge ${temps.length?'bd':'bx'}" style="margin-left:auto">${temps.length} added</span>
+    </div>
+    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Add staff who are <b>not</b> in the regular staff records. They appear only in this month's salary sheet for the Director and approvers.</div>
+    <div class="frow" style="grid-template-columns:1.5fr 1fr 1fr 2fr auto">
+      <div><label class="lbl">Name</label><input id="tmp_name" class="inp" placeholder="Staff name"></div>
+      <div><label class="lbl">Section</label><select id="tmp_sec" class="inp">${SECTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+      <div><label class="lbl">Salary (Rs)</label><input id="tmp_sal" class="inp" type="number" min="0" placeholder="e.g. 15000"></div>
+      <div><label class="lbl">Remarks</label><input id="tmp_remarks" class="inp" placeholder="e.g. Event helper, Contract worker"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn bb bsm" onclick="addTempStaff('${m}')" style="height:35px"><i class="ti ti-plus"></i> Add</button></div>
+    </div>
+    ${temps.length?`<div style="overflow-x:auto"><table style="min-width:500px;margin-top:8px"><thead><tr><th>Name</th><th>Section</th><th>Salary</th><th>Remarks</th><th></th></tr></thead><tbody>
+    ${temps.map(t=>`<tr>
+      <td style="white-space:nowrap;font-weight:600">${t.name}</td>
+      <td><span class="sec-${t.section.toLowerCase()}">${t.section}</span></td>
+      <td style="font-weight:600">Rs${(t.salary||0).toLocaleString()}</td>
+      <td style="color:var(--text3)">${t.remarks||'—'}</td>
+      <td><button class="btn brd bsm" onclick="removeTempStaff('${m}','${t.id}')"><i class="ti ti-trash"></i></button></td>
+    </tr>`).join('')}
+    </tbody></table></div>`:'<p class="tm" style="margin-top:8px">No temporary staff added for this month.</p>'}
+  </div>`:''}`;
 }
 
 // CUSTOM DEDUCTIONS — admin only
@@ -2216,6 +2267,7 @@ function pgApprovals(){
 // visible until the refund is released and signed, so it never gets lost.
 function securityRefundsCard(){
   const canRelease=(APP.user.role==='director')||(APP.user.role==='admin');
+  const isDirector=APP.user.role==='director';
   const lefts=getStaffOnly().filter(s=>hasLeft(s)&&refundEligible(s)&&securityRefundAmount(s.id)>0)
     .filter(s=>{const r=securityRefund(s.id);return !(r&&r.signed);}); // hide once fully signed
   // Also surface recently-completed (signed) ones so the director can view the signature.
@@ -2228,20 +2280,21 @@ function securityRefundsCard(){
     if(r&&r.signed) action=`<button class="btn bou bsm" onclick="openRefundSigView('${s.id}')"><i class="ti ti-signature"></i> View signature</button>`;
     else if(r&&r.released) action=`<span class="badge by"><i class="ti ti-clock"></i> Awaiting signature</span>${canRelease?` <button class="btn bou bsm" onclick="undoSecurityRefund('${s.id}')" title="Undo release"><i class="ti ti-arrow-back-up"></i></button>`:''}`;
     else action=canRelease?`<button class="btn bgr bsm" onclick="openModal('mark_left','${s.id}')"><i class="ti ti-send"></i> Release refund</button>`:'<span class="tm">Pending Director/Admin</span>';
-    return `<tr>
-      <td style="white-space:nowrap">${s.name}<div class="tm" style="font-size:10px">${s.section} · left ${fmtMonthLabel(s.left_month)}</div></td>
+    let cols=`<td style="white-space:nowrap">${s.name}<div class="tm" style="font-size:10px">${s.section} · left ${fmtMonthLabel(s.left_month)}</div></td>
       <td>${fmtMonthLabel(refundMonth(s))}</td>
-      <td style="font-weight:700">Rs${(r&&r.amount!=null?r.amount:amt).toLocaleString()}</td>
-      <td><span class="badge ${st.cls}">${st.label}</span></td>
-      <td style="white-space:nowrap">${action}</td>
-    </tr>`;
+      <td style="font-weight:700">Rs${(r&&r.amount!=null?r.amount:amt).toLocaleString()}</td>`;
+    if(!isDirector){
+      cols+=`<td><span class="badge ${st.cls}">${st.label}</span></td>`;
+      cols+=`<td style="white-space:nowrap">${action}</td>`;
+    }
+    return `<tr>${cols}</tr>`;
   };
   const all=[...lefts, ...signed.filter(s=>!lefts.includes(s))];
   return `<div class="card" style="border-color:#f59e0b55">
     <div class="ct"><i class="ti ti-shield-lock" style="color:#fbbf24"></i> Security Deposit Refunds — Left Staff</div>
     <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Staff who have left and are owed their security deposit back. Release the refund (shows in the chosen month, with no salary) — the staff member then signs a receipt for it.</div>
     <div style="overflow-x:auto"><table style="min-width:560px"><thead><tr>
-      <th>Staff</th><th>Refund Month</th><th>Amount</th><th>Status</th><th></th>
+      <th>Staff</th><th>Refund Month</th><th>Amount</th>${isDirector?'':'<th>Status</th><th></th>'}
     </tr></thead><tbody>
     ${all.map(row).join('')}
     </tbody></table></div>
@@ -2871,6 +2924,7 @@ function slipHTML(sl,signed,m,uid,canSign){
     <div class="div"></div>
     <div class="sr"><span>Basic Salary</span><span>Rs${sl.salary.toLocaleString()}</span></div>
     ${sl.ces&&sl.ces.length?sl.ces.map(c=>`<div class="sr"><span style="color:#34d399">${c.label}</span><span style="color:#34d399">+Rs${c.amount.toLocaleString()}</span></div>`).join(''):''}
+    ${sl.secRefund>0?`<div class="sr"><span style="color:#34d399">Security Deposit Refund</span><span style="color:#34d399;font-weight:700">+Rs${sl.secRefund.toLocaleString()}</span></div>`:''}
     ${sl.lateDays>0?`<div class="sr"><span style="color:#f87171">Day Late (${sl.tLate} lates − 2 allowed = ${sl.effectiveLates} late)</span><span class="dd">-Rs${Math.round(sl.lateDays*sl.ppd).toLocaleString()}</span></div>`:''}
     ${sl.hlDays>0?`<div class="sr"><span style="color:#f87171">Half Leave (${sl.hlRaw} half leave)</span><span class="dd">-Rs${Math.round(sl.hlDays*sl.ppd).toLocaleString()}</span></div>`:''}
     ${sl.dleaDays>0?`<div class="sr"><span style="color:#f87171">Day Leave (${sl.absent} absent + ${sl.casualLeave} casual leave)</span><span class="dd">-Rs${Math.round(sl.dleaDays*sl.ppd).toLocaleString()}</span></div>`:''}
@@ -4270,6 +4324,34 @@ async function genSheet(m){
   if(!DB.salary_sheets[m]) DB.salary_sheets[m]={};
   staffInMonth(m).forEach(s=>{DB.salary_sheets[m][s.id]=true;}); // skip anyone who left before this month
   await saveField('salary_sheets');R();
+}
+
+// ─── ONE-TIME / TEMPORARY STAFF ────────────────────────────────
+function addTempStaff(m){
+  const name=(document.getElementById('tmp_name').value||'').trim();
+  const section=document.getElementById('tmp_sec').value;
+  const salary=parseInt(document.getElementById('tmp_sal').value)||0;
+  const remarks=(document.getElementById('tmp_remarks').value||'').trim();
+  if(!name){ toast('Enter the staff name.','error'); return; }
+  if(salary<=0){ toast('Enter a valid salary amount.','error'); return; }
+  if(!DB.monthly_additions) DB.monthly_additions={};
+  if(!DB.monthly_additions[m]) DB.monthly_additions[m]=[];
+  const id='tmp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  DB.monthly_additions[m].push({id,name,section,salary,remarks});
+  saveField('monthly_additions');
+  document.getElementById('tmp_name').value='';
+  document.getElementById('tmp_sal').value='';
+  document.getElementById('tmp_remarks').value='';
+  toast(name+' added to '+fmtMonthLabel(m)+'.','success');
+  R();
+}
+function removeTempStaff(m,id){
+  if(!DB.monthly_additions||!DB.monthly_additions[m]) return;
+  DB.monthly_additions[m]=DB.monthly_additions[m].filter(t=>t.id!==id);
+  if(!DB.monthly_additions[m].length) delete DB.monthly_additions[m];
+  saveField('monthly_additions');
+  toast('Removed from salary sheet.','success');
+  R();
 }
 // Undo: delete a month's salary sheet (removes that month's security from totals).
 async function deleteSheet(m){
