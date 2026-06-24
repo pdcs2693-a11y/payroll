@@ -1803,7 +1803,7 @@ function pgManageUsers(){
 
 // STAFF RECORDS — admin: full edit + security total + increment. director: view only.
 function pgStaffMgmt(){
-  const staff=getStaffOnly();
+  const staff=getStaffOnly().filter(s=>!hasLeft(s));
   const isAdmin=isAdminLike();
   const ed=isAdmin&&canEdit('staff_mgmt'); // can make changes
   return `<div class="card">
@@ -1814,10 +1814,6 @@ function pgStaffMgmt(){
       <span><b>Total Sec. Ded.</b> = sum of all months' security deductions. &nbsp;|&nbsp; <b>Next Increment</b> auto-calculates from join date (+1yr). Click the date to set a manual date; it then advances +1yr from that date each year.</span>
     </div>`:''}
     ${searchBox('staff-row','Search staff by name, ID or designation…')}
-    ${(()=>{const lv=staff.filter(s=>hasLeft(s));return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa55;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left Staff (${lv.length})</span>
-      ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section} <span style="color:var(--text4)">·</span> ${fmtMonthLabel(s.left_month)}${s.left_date?` (${s.left_date})`:''}</span>`).join('')}
-    </div>`:'';})()}
     <div style="overflow-x:auto">
     <table style="min-width:900px"><thead><tr>
       <th>ID</th><th>Name</th><th>Designation</th>
@@ -1836,7 +1832,7 @@ function pgStaffMgmt(){
       const nextIncr = getNextIncrementDate(s);
       const ist = incrStatus(nextIncr);
       const isManualIncr = !!s.increment_date;
-      return `<tr class="staff-row" data-search="${ds(s.id+' '+s.name+' '+s.section+' '+s.designation)}" style="${hasLeft(s)?'opacity:.72':''}">
+      return `<tr class="staff-row" data-search="${ds(s.id+' '+s.name+' '+s.section+' '+s.designation)}">
         <td><code style="font-size:10px;color:var(--text2)">${s.id}</code></td>
         <td style="white-space:nowrap">${s.name}${hasLeft(s)?` <span class="badge bx" title="Last working month: ${fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i> Left ${fmtMonthLabel(s.left_month)}</span>`:''}${hasAdminPrivs(s)?` <span class="badge bb" title="Granted admin access"><i class="ti ti-shield-lock"></i> Admin access</span>`:''}</td>
         <td style="color:var(--text2)">${s.designation}</td>
@@ -1876,30 +1872,32 @@ function pgStaffMgmt(){
   </div>`;
 }
 
-// LEFT STAFF — dedicated page showing all departed staff with full details + PDF download.
+// LEFT STAFF — dedicated page showing all departed staff with complete records + undo.
 function pgLeftStaff(){
-  const m=APP.month;
   const staff=getStaffOnly().filter(s=>hasLeft(s));
   if(!staff.length) return `<div class="card"><div class="ct"><i class="ti ti-logout"></i> Left Staff</div><p class="tm" style="padding:20px">No staff members have been marked as left.</p></div>`;
   return `<div class="card">
     <div class="ct"><i class="ti ti-logout"></i> Left Staff <span class="badge bx" style="margin-left:auto">${staff.length}</span></div>
-    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Staff marked as left are excluded from attendance, salary sheets and approval lists after their last working month. Download their salary history as PDF before removing them.</div>
+    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Staff marked as left are excluded from attendance, salary sheets and approval lists after their last working month. Undo to move them back to active Staff Records.</div>
     <div style="overflow-x:auto"><table style="min-width:900px"><thead><tr>
-      <th>Name</th><th>Section</th><th>Designation</th><th>Last Working Month</th><th>Left Date</th><th>Bank Details</th><th>Remarks</th><th></th>
+      <th>ID</th><th>Name</th><th>Designation</th>
+      <th>Salary</th><th>Left Since</th><th>Bank Account</th>
+      <th></th>
     </tr></thead><tbody>
-    ${staff.map(s=>`<tr style="opacity:.72">
-      <td style="white-space:nowrap;font-weight:600">${s.name}</td>
-      <td><span class="sec-${s.section.toLowerCase()}">${s.section[0]}</span></td>
-      <td style="color:var(--text3)">${s.designation||'—'}</td>
-      <td>${fmtMonthLabel(s.left_month)}</td>
-      <td style="color:var(--text3)">${s.left_date||'—'}</td>
-      <td style="color:var(--text3);font-size:11px">${[s.bank_name,s.account_title,s.account_no].filter(Boolean).join(' · ')||'—'}</td>
-      <td style="color:var(--text3);font-size:11px">${s.remarks||'—'}</td>
-      <td style="white-space:nowrap">
-        <button class="btn bou bsm" onclick="openLeftStaffPdf('${s.id}')"><i class="ti ti-file-download"></i> PDF</button>
-        <button class="btn bou bsm" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button>
-      </td>
-    </tr>`).join('')}
+    ${staff.map(s=>{
+      return `<tr class="staff-row">
+        <td><code style="font-size:10px;color:var(--text2)">${s.id}</code></td>
+        <td style="white-space:nowrap;font-weight:600">${s.name}</td>
+        <td style="color:var(--text3)">${s.designation||'—'}</td>
+        <td>Rs${(s.salary||0).toLocaleString()}</td>
+        <td style="white-space:nowrap">${fmtMonthLabel(s.left_month)}${s.left_date?` <span class="tm">(${s.left_date})</span>`:''}</td>
+        <td style="white-space:nowrap"><button class="btn bou bsm" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn bou bsm" onclick="openLeftStaffPdf('${s.id}')"><i class="ti ti-file-download"></i> PDF</button>
+          <button class="btn brd bsm" onclick="undoLeft('${s.id}')"><i class="ti ti-arrow-back-up"></i> Undo</button>
+        </td>
+      </tr>`;
+    }).join('')}
     </tbody></table></div>
   </div>`;
 }
