@@ -883,7 +883,7 @@ function calcAutoQuota(staff, year){
   const y=parseInt(year);
   if(jy===y){
     const annual=Math.max(0,12-jmn+1);
-    const sick=jmn<4?6:3;
+    const sick=jmn<6?6:3;
     return {annual,sick};
   }
   if(jy>y) return {annual:0,sick:0}; // not joined yet in that year
