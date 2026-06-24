@@ -1886,19 +1886,23 @@ function pgLeftStaff(){
       <th>Salary</th><th>Left Since</th><th>Bank Account</th>
       <th></th>
     </tr></thead><tbody>
-    ${staff.map(s=>{
-      return `<tr class="staff-row">
-        <td><code style="font-size:10px;color:var(--text2)">${s.id}</code></td>
-        <td style="white-space:nowrap;font-weight:600">${s.name}</td>
-        <td style="color:var(--text3)">${s.designation||'—'}</td>
-        <td>Rs${(s.salary||0).toLocaleString()}</td>
-        <td style="white-space:nowrap">${fmtMonthLabel(s.left_month)}${s.left_date?` <span class="tm">(${s.left_date})</span>`:''}${s.login_blocked?` <span class="badge br" style="font-size:9px"><i class="ti ti-lock"></i></span>`:''}</td>
-        <td style="white-space:nowrap"><button class="btn bou bsm" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button></td>
-        <td style="white-space:nowrap">
-          <button class="btn bou bsm" onclick="openLeftStaffPdf('${s.id}')"><i class="ti ti-file-download"></i> PDF</button>
-          <button class="btn brd bsm" onclick="undoLeft('${s.id}')"><i class="ti ti-arrow-back-up"></i> Undo</button>
-        </td>
-      </tr>`;
+    ${SECTIONS.flatMap(sec=>{
+      const rows=staff.filter(s=>s.section===sec);
+      if(!rows.length) return [];
+      return [secHeaderRow(sec,7),
+        ...rows.map(s=>`<tr class="staff-row">
+          <td><code style="font-size:10px;color:var(--text2)">${s.id}</code></td>
+          <td style="white-space:nowrap;font-weight:600">${s.name}</td>
+          <td style="color:var(--text3)">${s.designation||'—'}</td>
+          <td>Rs${(s.salary||0).toLocaleString()}</td>
+          <td style="white-space:nowrap">${fmtMonthLabel(s.left_month)}${s.left_date?` <span class="tm">(${s.left_date})</span>`:` <span class="tm">—</span>`}${s.login_blocked?` <span class="badge br" style="font-size:9px"><i class="ti ti-lock"></i></span>`:''}</td>
+          <td style="white-space:nowrap"><button class="btn bou bsm" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button></td>
+          <td style="white-space:nowrap">
+            <button class="btn bou bsm" onclick="openLeftStaffPdf('${s.id}')"><i class="ti ti-file-download"></i> PDF</button>
+            <button class="btn brd bsm" onclick="undoLeft('${s.id}')"><i class="ti ti-arrow-back-up"></i> Undo</button>
+          </td>
+        </tr>`)
+      ];
     }).join('')}
     </tbody></table></div>
   </div>`;
