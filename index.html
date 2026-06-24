@@ -1527,6 +1527,8 @@ function sidebarItems(){
     {id:'staff_mgmt',i:'ti-id-badge-2',l:'Staff Records'},
     {id:'attendance',i:'ti-calendar-stats',l:'Attendance (View)'},
     {id:'leave_overview',i:'ti-calendar-check',l:'Leave Overview'},
+    {s:'LEFT STAFF'},
+    {id:'left_staff',i:'ti-logout',l:'Left Staff'},
     {s:'APPROVAL & RELEASE'},
     {id:'approve_release',i:'ti-shield-check',l:'Approve & Release'},
     {id:'all_slips',i:'ti-checkbox',l:'Confirmation'},
@@ -1537,6 +1539,7 @@ function sidebarItems(){
     const grouped=['all_slips','data_archive']; // these appear under their own sections below
     const secs=ADMIN_PRIVS.filter(p=>!grouped.includes(p.key)&&canView(p.key)).map(p=>({id:p.key,i:p.i,l:p.label}));
     if(secs.length) items.push({s:'ADMINISTRATION'}, ...secs);
+    items.push({s:'LEFT STAFF'},{id:'left_staff',i:'ti-logout',l:'Left Staff'});
     if(canView('all_slips')) items.push({s:'RELEASE'}, {id:'all_slips',i:'ti-checkbox',l:'Salary Release Confirmation'});
     if(isSuperAdmin(APP.user)||canView('data_archive')) items.push({s:'SUPER ADMIN'}, {id:'data_archive',i:'ti-database-cog',l:'Data Archive'});
     return items;
@@ -1588,6 +1591,7 @@ function renderPage(){
   if(t==='my_att')        return pgMyAtt();
   if(t==='my_leaves')     return pgMyLeaves();
   if(t==='leave_overview')return pgLeaveOverview();
+  if(t==='left_staff')   return pgLeftStaff();
   if(t==='data_archive'){
     if(!isAdminLike() || !canView('data_archive')) return `<div class="card"><div class="ct"><i class="ti ti-lock"></i> No Access</div>
       <div class="alert aw"><i class="ti ti-alert-triangle"></i> You don't have permission to access data archiving. Ask the main admin to grant it.</div></div>`;
@@ -1870,6 +1874,40 @@ function pgStaffMgmt(){
     }).join('')}
     </tbody></table></div>
   </div>`;
+}
+
+// LEFT STAFF — dedicated page showing all departed staff with full details + PDF download.
+function pgLeftStaff(){
+  const m=APP.month;
+  const staff=getStaffOnly().filter(s=>hasLeft(s));
+  if(!staff.length) return `<div class="card"><div class="ct"><i class="ti ti-logout"></i> Left Staff</div><p class="tm" style="padding:20px">No staff members have been marked as left.</p></div>`;
+  return `<div class="card">
+    <div class="ct"><i class="ti ti-logout"></i> Left Staff <span class="badge bx" style="margin-left:auto">${staff.length}</span></div>
+    <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Staff marked as left are excluded from attendance, salary sheets and approval lists after their last working month. Download their salary history as PDF before removing them.</div>
+    <div style="overflow-x:auto"><table style="min-width:900px"><thead><tr>
+      <th>Name</th><th>Section</th><th>Designation</th><th>Last Working Month</th><th>Left Date</th><th>Bank Details</th><th>Remarks</th><th></th>
+    </tr></thead><tbody>
+    ${staff.map(s=>`<tr style="opacity:.72">
+      <td style="white-space:nowrap;font-weight:600">${s.name}</td>
+      <td><span class="sec-${s.section.toLowerCase()}">${s.section[0]}</span></td>
+      <td style="color:var(--text3)">${s.designation||'—'}</td>
+      <td>${fmtMonthLabel(s.left_month)}</td>
+      <td style="color:var(--text3)">${s.left_date||'—'}</td>
+      <td style="color:var(--text3);font-size:11px">${[s.bank_name,s.account_title,s.account_no].filter(Boolean).join(' · ')||'—'}</td>
+      <td style="color:var(--text3);font-size:11px">${s.remarks||'—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn bou bsm" onclick="openLeftStaffPdf('${s.id}')"><i class="ti ti-file-download"></i> PDF</button>
+        <button class="btn bou bsm" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button>
+      </td>
+    </tr>`).join('')}
+    </tbody></table></div>
+  </div>`;
+}
+function openLeftStaffPdf(sid){
+  const st=DB.staff_users.find(x=>x.id===sid)||{};
+  const months=monthsWithSheets().filter(m=>staffIssued(m,sid)).sort();
+  if(!months.length){toast('No salary history found for '+st.name+'.','warn');return;}
+  buildAndOpenArchive('Salary History — '+(st.name||''), months, [sid]);
 }
 
 // ATTENDANCE — admin: full edit. director: read-only summary.
