@@ -1810,6 +1810,10 @@ function pgStaffMgmt(){
       <span><b>Total Sec. Ded.</b> = sum of all months' security deductions. &nbsp;|&nbsp; <b>Next Increment</b> auto-calculates from join date (+1yr). Click the date to set a manual date; it then advances +1yr from that date each year.</span>
     </div>`:''}
     ${searchBox('staff-row','Search staff by name, ID or designation…')}
+    ${(()=>{const lv=staff.filter(s=>hasLeft(s));return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa55;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left Staff (${lv.length})</span>
+      ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section} <span style="color:var(--text4)">·</span> ${fmtMonthLabel(s.left_month)}${s.left_date?` (${s.left_date})`:''}</span>`).join('')}
+    </div>`:'';})()}
     <div style="overflow-x:auto">
     <table style="min-width:900px"><thead><tr>
       <th>ID</th><th>Name</th><th>Designation</th>
@@ -3550,13 +3554,14 @@ function renderModal(){
     <div class="fsep"><i class="ti ti-logout" style="color:#f87171"></i> Employment Status</div>
     ${s.left_month
       ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-           <span class="badge bx"><i class="ti ti-logout"></i> Left since ${fmtMonthLabel(s.left_month)}</span>
+           <span class="badge bx"><i class="ti ti-logout"></i> Left since ${fmtMonthLabel(s.left_month)}${s.left_date?` (${s.left_date})`:''}</span>
            <button class="btn bou bsm" onclick="undoLeft('${data}')"><i class="ti ti-arrow-back-up"></i> Undo — still employed</button>
          </div>`
       : `<div style="margin-bottom:10px">
            <label class="lbl">Mark this staff member as having left</label>
            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
              <div style="flex:1;min-width:160px">${monthPicker(new Date().toISOString().slice(0,7),{id:'m_left_month',style:'width:100%',placeholder:'Select last working month'})}</div>
+             <input type="date" id="m_left_date" class="inp" style="flex:1;min-width:140px" value="">
              <button class="btn brd bsm" onclick="saveLeftMonth('${data}')"><i class="ti ti-logout"></i> Mark as Left</button>
            </div>
            <div class="tm" style="margin-top:4px;font-size:10px">Their salary is included up to this month. Security deductions stop from this month onward. Future months will exclude them from the payroll.</div>
@@ -4065,6 +4070,8 @@ async function saveLeftMonth(id){
   if(!st) return;
   if(!await confirmDialog('Mark '+st.name+' as having left, effective '+fmtMonthLabel(m)+'?\n\nTheir salary will be included up to '+fmtMonthLabel(m)+'. Security deductions stop from this month. Future months will exclude them from attendance, salary sheets, and approval lists.')) return;
   st.left_month=m;
+  const d=document.getElementById('m_left_date').value;
+  if(d) st.left_date=d;
   await saveField('staff_users');closeModal();
   toast(st.name+' marked as left (last working month: '+fmtMonthLabel(m)+').','success');
 }
@@ -4074,6 +4081,7 @@ async function undoLeft(id){
   if(!st||!st.left_month) return;
   if(!await confirmDialog('Undo the "left" status for '+st.name+'? They will be treated as an active staff member again.')) return;
   delete st.left_month;
+  delete st.left_date;
   await saveField('staff_users');closeModal();
   toast(st.name+' is now active again.','success');
 }
