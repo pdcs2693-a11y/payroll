@@ -935,7 +935,17 @@ function getLeaveBalance(staffId, year){
 //  Custom deds      : additional fixed amounts
 function calcSlip(staffId, month){
   const st=DB.staff_users.find(s=>s.id===staffId&&s.role==='staff');
-  if(!st) return null;
+  if(!st){
+    const ma=DB.monthly_additions?.[month]?.find?.(s=>s.id===staffId);
+    if(ma) return {id:staffId, name:ma.name, section:ma.section, designation:'One-time',
+      salary:ma.salary||0, days:1,
+      tLate:0, effectiveLates:0, lateDays:0, hlRaw:0, hlDays:0,
+      absent:0, casualLeave:0, dleaDays:0,
+      annualLeave:0, sickLeave:0, ppd:0, netBeforeSec:0,
+      secDed:0, secPct:0, secCompleted:true, secRemaining:0, secTotal:0,
+      cdTotal:0, ceTotal:0, deduction:0, net:ma.salary||0, cds:[], ces:[], month};
+    return null;
+  }
   const att=((DB.attendance[month]||{})[staffId])||{};
   const sal=salaryForMonth(st, month);
   const days=att.days||daysInMonth(month);
@@ -1061,13 +1071,25 @@ function visibleSectionsFor(user){
 //   staff_approvals[m][sid] = { <approverKey>: {status,remarks,by,date}, ... }
 // (legacy records were a single flat {status,...} — still honoured for all slots).
 // Approver slots that must sign off on this staff member (by their section).
+// Resolve a staff member's section — checks DB.staff_users first, then
+// fallback to monthly_additions (one-time/temp staff) so approvers can
+// review them by section.
+function staffSectionFallback(sid){
+  const st=DB.staff_users.find(s=>s.id===sid);
+  if(st) return st.section;
+  for(const m of Object.keys(DB.monthly_additions||{})){
+    const t=(DB.monthly_additions[m]||[]).find(t=>t.id===sid);
+    if(t) return t.section;
+  }
+  return null;
+}
 function coveringSlots(sid){
-  const st=DB.staff_users.find(s=>s.id===sid); const sec=st?st.section:null;
+  const sec=staffSectionFallback(sid);
   return APPROVER_LIST.filter(a=>(a.sections||[]).includes(sec));
 }
 // Approver slot(s) the given user holds that cover this particular staff member.
 function actingApproverKeys(uid, sid){
-  const st=DB.staff_users.find(s=>s.id===sid); const sec=st?st.section:null;
+  const sec=staffSectionFallback(sid);
   return getApproverRoles(uid).filter(k=>{
     const apr=APPROVER_LIST.find(a=>a.key===k);
     return apr && (apr.sections||[]).includes(sec);
@@ -2007,14 +2029,14 @@ function salaryTableHTML(list, m, opts={}){
     }).join('')}
     ${temps.length?`<tr><td colspan="${span}" style="background:var(--surface);border-top:2px solid var(--border);padding:8px 10px;font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-user-plus" style="margin-right:4px"></i> One-Time / Temporary Staff</td></tr>
     ${temps.map((t,i)=>{
+      const bankInfo=t.bank_name||t.account_title||t.account_no?`<span style="display:block;font-size:10px;font-weight:400;color:var(--text3);margin-top:2px">${[t.bank_name,t.account_title,t.account_no].filter(Boolean).join(' · ')}</span>`:'';
       return `<tr class="sal-row" data-search="${ds(t.name+' '+t.section)}">
         <td style="color:var(--text4)">${list.length+i+1}</td>
-        <td style="white-space:nowrap;font-weight:600">${t.name}</td>
+        <td style="white-space:nowrap;font-weight:600">${t.name}${bankInfo}</td>
         <td><span class="sec-${t.section.toLowerCase()}">${t.section[0]}</span></td>
         <td style="color:var(--text3);font-style:italic">${t.remarks||'One-time'}</td>
         <td>Rs${(t.salary||0).toLocaleString()}</td>
         ${detail?`<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`:''}
-        <td>—</td>
         <td style="color:#f87171;font-weight:600">-Rs0</td>
         <td style="color:#34d399;font-weight:700">Rs${(t.salary||0).toLocaleString()}</td>
         ${act?`<td style="white-space:nowrap">${opts.actionCell(t,null)}</td>`:''}
@@ -2032,7 +2054,7 @@ function salaryTableHTML(list, m, opts={}){
 function adminDelegateCard(){
   if(APP.user.role!=='admin') return '';
   const m=APP.month, mLabel=fmtMonthLabel(m);
-  const staff=staffInMonth(m);
+  const staff=staffInMonth(m).concat(DB.monthly_additions?.[m]||[]);
   const dmap=DB.release_delegations[m]||{};
   // Actionable: delegated AND still owes something (not released, or a top-up pending).
   const pending=staff.filter(s=>dmap[s.id]&&(!staffReleased(m,s.id)||releaseRemaining(m,s.id)>0));
@@ -2098,19 +2120,25 @@ function pgSalarySheet(){
       <span class="badge ${temps.length?'bd':'bx'}" style="margin-left:auto">${temps.length} added</span>
     </div>
     <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Add staff who are <b>not</b> in the regular staff records. They appear only in this month's salary sheet for the Director and approvers.</div>
-    <div class="frow" style="grid-template-columns:1.5fr 1fr 1fr 2fr auto">
+    <div class="frow" style="grid-template-columns:1.5fr 1fr 1fr 1.5fr auto">
       <div><label class="lbl">Name</label><input id="tmp_name" class="inp" placeholder="Staff name"></div>
       <div><label class="lbl">Section</label><select id="tmp_sec" class="inp">${SECTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
       <div><label class="lbl">Salary (Rs)</label><input id="tmp_sal" class="inp" type="number" min="0" placeholder="e.g. 15000"></div>
       <div><label class="lbl">Remarks</label><input id="tmp_remarks" class="inp" placeholder="e.g. Event helper, Contract worker"></div>
       <div style="display:flex;align-items:flex-end"><button class="btn bb bsm" onclick="addTempStaff('${m}')" style="height:35px"><i class="ti ti-plus"></i> Add</button></div>
     </div>
-    ${temps.length?`<div style="overflow-x:auto"><table style="min-width:500px;margin-top:8px"><thead><tr><th>Name</th><th>Section</th><th>Salary</th><th>Remarks</th><th></th></tr></thead><tbody>
+    <div class="frow" style="grid-template-columns:1.5fr 1.5fr 2fr;margin-top:0">
+      <div><label class="lbl">Bank Name</label><input id="tmp_bank" class="inp" placeholder="e.g. HBL, Meezan"></div>
+      <div><label class="lbl">Account Title</label><input id="tmp_acc_title" class="inp" placeholder="Account holder name"></div>
+      <div><label class="lbl">Account No / IBAN</label><input id="tmp_acc_no" class="inp" placeholder="e.g. PK00 XXXX 0000 0000"></div>
+    </div>
+    ${temps.length?`<div style="overflow-x:auto"><table style="min-width:600px;margin-top:8px"><thead><tr><th>Name</th><th>Section</th><th>Salary</th><th>Remarks</th><th>Bank</th><th></th></tr></thead><tbody>
     ${temps.map(t=>`<tr>
       <td style="white-space:nowrap;font-weight:600">${t.name}</td>
       <td><span class="sec-${t.section.toLowerCase()}">${t.section}</span></td>
       <td style="font-weight:600">Rs${(t.salary||0).toLocaleString()}</td>
       <td style="color:var(--text3)">${t.remarks||'—'}</td>
+      <td style="color:var(--text3);font-size:11px">${t.bank_name||t.account_title||t.account_no?`${[t.bank_name,t.account_title,t.account_no].filter(Boolean).join(' · ')}`:'—'}</td>
       <td><button class="btn brd bsm" onclick="removeTempStaff('${m}','${t.id}')"><i class="ti ti-trash"></i></button></td>
     </tr>`).join('')}
     </tbody></table></div>`:'<p class="tm" style="margin-top:8px">No temporary staff added for this month.</p>'}
@@ -2292,6 +2320,7 @@ function pgApproveRelease(){
   const approvedUnreleased=staff.filter(s=>{const a=staffApproval(m,s.id);return a&&a.status==='approved'&&!relMap[s.id];}).length;
 
   // Per-person status + remarks + release control
+  const isLastMonth = s => hasLeft(s) && s.left_month === m;
   const dirActionCell=(s)=>{
     const a=staffApproval(m,s.id);
     const rel=!!relMap[s.id];
@@ -2301,6 +2330,7 @@ function pgApproveRelease(){
     const delegated=!!(DB.release_delegations[m]||{})[s.id];
     const by=(DB.release_by[m]||{})[s.id];
     return `<span class="badge ${meta.cls}" title="${meta.label}"><i class="ti ti-${meta.icon}"></i></span>
+      ${hasLeft(s)?`<span class="badge bx" title="${isLastMonth(s)?'This is their LAST month — they have left':'Left since '+fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i> Left${isLastMonth(s)?' (Last month)':''}</span>`:''}
       ${(a&&a.remarks)?`<button class="btn bou bsm" style="border-color:${meta.color}88;color:${meta.color}" onclick="openModal('view_remark','${s.id}')"><i class="ti ti-message-2"></i> Remarks</button>`:''}
       <button class="btn bou bsm" title="Account details" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button>
       <button class="btn bou bsm" onclick="openModal('slip_detail','${s.id}|${m}')"><i class="ti ti-list-details"></i> Details</button>
@@ -2334,6 +2364,23 @@ function pgApproveRelease(){
     </div>
     <div class="ov-note"><i class="ti ti-crown" style="flex-shrink:0"></i> Each approver reviews their section. Releasing a person's salary individually overrides any pending approval for that person.</div>
     ${(()=>{const ch=staff.filter(s=>releaseRemaining(m,s.id)>0);const sum=ch.reduce((a,s)=>a+releaseRemaining(m,s.id),0);return ch.length?`<div class="alert aw"><i class="ti ti-alert-triangle"></i> <span>Salary revised after release for <b>${ch.length}</b> staff — <b>Rs${sum.toLocaleString()}</b> still to be released: ${ch.map(s=>s.name+' (Rs'+releaseRemaining(m,s.id).toLocaleString()+')').join(', ')}. Use <b>Release remaining</b> in the table below.</span></div>`:'';})()}
+    ${(()=>{const lv=staff.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa55;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left this month</span>
+      ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section}</span>`).join('')}
+    </div>`:'';})()}
+    ${(()=>{
+      const cds=DB.custom_deds.filter(d=>d.month===m);
+      const ces=(DB.custom_earnings||[]).filter(e=>e.month===m);
+      if(!cds.length&&!ces.length) return '';
+      const staffName=sid=>{const s=DB.staff_users.find(x=>x.id===sid);return s?s.name:sid;};
+      const chip=(label,amt,who,color)=>`<span class="badge" style="font-size:10px;padding:4px 10px;background:${color}22;color:${color};border:1px solid ${color}44">${label}${who?` <span style="opacity:.7">·</span> ${who}`:''} <span style="opacity:.7">·</span> Rs${amt.toLocaleString()}</span>`;
+      const rows=[];
+      if(cds.length) rows.push(`<span style="display:flex;align-items:center;gap:6px;color:#f87171;font-size:12px;font-weight:700"><i class="ti ti-receipt-off"></i> Deductions</span>`+
+        cds.map(d=>chip(d.label,d.amount,d.global?'All staff':staffName(d.staffId),'#f87171')).join(''));
+      if(ces.length) rows.push(`<span style="display:flex;align-items:center;gap:6px;color:#34d399;font-size:12px;font-weight:700"><i class="ti ti-cash"></i> Earnings</span>`+
+        ces.map(e=>chip(e.label,e.amount,e.global?'All staff':staffName(e.staffId),'#34d399')).join(''));
+      return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">${rows.join('<span style="width:1px;height:20px;background:var(--border);margin:0 2px"></span>')}</div>`;
+    })()}
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
       <div style="flex:1;background:var(--inset);border-radius:6px;height:8px;overflow:hidden">
         <div style="height:8px;border-radius:6px;width:${Math.round(ap.count/APPROVER_LIST.length*100)}%;background:${ap.full?'#059669':'#3b82f6'};transition:width .3s"></div>
@@ -2376,7 +2423,7 @@ function pgApproveRelease(){
     <div class="ct"><i class="ti ti-calculator"></i> Salary Sheet — ${m}
       <span class="badge ${relCount===staff.length&&staff.length?'bg':'by'}" style="margin-left:auto">${relCount}/${staff.length} released</span>
     </div>
-    ${staff.length?salaryTableHTML(staff,m,{compact:true,actionHeader:'Status / Release',actionCell:dirActionCell,rowStyle:(s)=>rowTint(m,s)}):'<p class="tm">No staff records.</p>'}
+    ${staff.length?salaryTableHTML(staff,m,{compact:true,actionHeader:'Status / Release',actionCell:dirActionCell,rowStyle:(s)=>{const t=rowTint(m,s);return t+(hasLeft(s)?(t?';':'')+'opacity:.7':'');}}):'<p class="tm">No staff records.</p>'}
     ${staff.length?`<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
       ${relCount>0?`<button class="btn bou" style="padding:10px 22px" onclick="unreleaseAll('${m}')"><i class="ti ti-arrow-back-up"></i> Undo all (${relCount})</button>`:''}
       ${approvedUnreleased>0?`<button class="btn bgr" style="padding:10px 22px" onclick="releaseAllApproved('${m}')"><i class="ti ti-send"></i> Release all approved (${approvedUnreleased})</button>`:''}
@@ -2413,10 +2460,11 @@ function pgAllSlips(){
     const a=myApproverDecision(m,s.id);
     const status=a?a.status:'';
     const meta=apprMeta(status);
+    const leftBadge=hasLeft(s)?`<span class="badge bx" style="margin-left:2px" title="${s.left_month===m?'Last month — staff has left':'Left since '+fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i></span>`:'';
     if(staffReleased(m,s.id)){
-      return `<span class="badge bg" style="padding:6px 12px"><i class="ti ti-lock"></i> Salary Released</span>${otherChips(s)}`;
+      return `${leftBadge}<span class="badge bg" style="padding:6px 12px"><i class="ti ti-lock"></i> Salary Released</span>${otherChips(s)}`;
     }
-    return `<select class="inp" style="width:auto;min-width:140px;display:inline-block;padding:5px 8px;${a?'border-color:'+meta.color+'66':''}" onchange="decideStaff('${m}','${s.id}',this.value)">
+    return `${leftBadge}<select class="inp" style="width:auto;min-width:140px;display:inline-block;padding:5px 8px;${a?'border-color:'+meta.color+'66':''}" onchange="decideStaff('${m}','${s.id}',this.value)">
         <option value=""${!a?' selected':''}>— Set decision —</option>
         <option value="approved"${status==='approved'?' selected':''}>✓ Approve</option>
         <option value="disapproved"${status==='disapproved'?' selected':''}>✗ Disapprove</option>
@@ -2425,14 +2473,19 @@ function pgAllSlips(){
       ${a&&a.remarks?`<button class="btn bou bsm" onclick="openModal('view_remark','${s.id}')" title="View remark"><i class="ti ti-message-2"></i></button>`:''}
       ${a?`<span class="badge ${meta.cls}" style="margin-left:2px"><i class="ti ti-${meta.icon}"></i> ${meta.label}</span>`:''}${otherChips(s)}`;
   };
+  const leftRowStyle=(s)=>{const t=rowTint(m,s);return t+(hasLeft(s)?(t?';':'')+'opacity:.7':'');};
   if(isSectionScoped){
     return `<div class="card">
       <div class="ct"><i class="ti ti-file-invoice"></i> ${allowed.join(' & ')+' — Salary Approval'}
         ${monthPicker(m,{nav:true,max:lastSheetMonth(),style:'width:160px;margin-left:auto'})}
       </div>
       <div class="alert ai"><i class="ti ti-info-circle"></i> Approve or disapprove each staff member's salary. Disapproving requires a remark for the Director. &nbsp;<b>${reviewed}/${list.length} reviewed.</b></div>
+      ${(()=>{const lv=list.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa55;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left this month</span>
+        ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section}</span>`).join('')}
+      </div>`:'';})()}
       ${list.length===0?'<p class="tm">No staff in your section for this view.</p>':
-        salaryTableHTML(list,m,{actionHeader:'Decision',actionCell,rowStyle:(s)=>rowTint(m,s)})}
+        salaryTableHTML(list,m,{actionHeader:'Decision',actionCell,rowStyle:leftRowStyle})}
       ${(list.length&&reviewed<list.length)?`<div style="display:flex;justify-content:flex-end;margin-top:14px">
         <button class="btn bou" onclick="approveAllRemaining('${m}')"><i class="ti ti-checks"></i> Approve all remaining (${list.length-reviewed})</button>
       </div>`:''}
@@ -3493,6 +3546,20 @@ function renderModal(){
       <div><label class="lbl">Account Title</label><input id="m_acc_title" class="inp" value="${s.account_title||''}" placeholder="Account holder name"></div>
     </div>
     <div><label class="lbl">Account Number / IBAN</label><input id="m_acc_no" class="inp" value="${s.account_no||''}" placeholder="e.g. PK00 XXXX 0000 0000" style="margin-bottom:6px"></div>
+    <div class="fsep"><i class="ti ti-logout" style="color:#f87171"></i> Employment Status</div>
+    ${s.left_month
+      ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+           <span class="badge bx"><i class="ti ti-logout"></i> Left since ${fmtMonthLabel(s.left_month)}</span>
+           <button class="btn bou bsm" onclick="undoLeft('${data}')"><i class="ti ti-arrow-back-up"></i> Undo — still employed</button>
+         </div>`
+      : `<div style="margin-bottom:10px">
+           <label class="lbl">Mark this staff member as having left</label>
+           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+             <div style="flex:1;min-width:160px">${monthPicker(new Date().toISOString().slice(0,7),{id:'m_left_month',style:'width:100%',placeholder:'Select last working month'})}</div>
+             <button class="btn brd bsm" onclick="saveLeftMonth('${data}')"><i class="ti ti-logout"></i> Mark as Left</button>
+           </div>
+           <div class="tm" style="margin-top:4px;font-size:10px">Their salary is included up to this month. Security deductions stop from this month onward. Future months will exclude them from the payroll.</div>
+         </div>`}
     <button class="btn bgr" style="width:100%;margin-top:8px;padding:10px" onclick="editStaff('${data}')"><i class="ti ti-check"></i> Save Changes</button>`;
   }
 
@@ -3609,7 +3676,7 @@ function renderModal(){
   // Release only part of a salary now; the balance stays pending (and can be delegated).
   if(type==='partial_release'){
     const [sid,m]=(data||'').split('|');
-    const st=DB.staff_users.find(x=>x.id===sid)||{};
+    const st=DB.staff_users.find(x=>x.id===sid)||Object.values(DB.monthly_additions||{}).reduce((a,b)=>a.concat(b),[]).find(x=>x.id===sid)||{};
     const sl=calcSlip(sid,m);
     const net=sl?sl.net:0;
     const already=releasedAmount(m,sid);
@@ -3671,7 +3738,7 @@ function renderModal(){
 
   // Director: staff bank account details.
   if(type==='account_details'){
-    const st=DB.staff_users.find(x=>x.id===data)||{};
+    const st=DB.staff_users.find(x=>x.id===data)||Object.values(DB.monthly_additions||{}).reduce((a,b)=>a.concat(b),[]).find(x=>x.id===data)||{};
     const has=st.bank_name||st.account_no||st.account_title;
     const row=(lbl,val)=>`<div style="display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid #1e293b">
       <span class="tm">${lbl}</span><span style="font-weight:600;color:var(--text);text-align:right;word-break:break-all">${val||'<span style=\"color:var(--text3)\">—</span>'}</span></div>`;
@@ -3686,7 +3753,7 @@ function renderModal(){
 
   // Director (or approver) views a disapproval / conditional remark.
   if(type==='view_remark'){
-    const st=DB.staff_users.find(x=>x.id===data)||{};
+    const st=DB.staff_users.find(x=>x.id===data)||Object.values(DB.monthly_additions||{}).reduce((a,b)=>a.concat(b),[]).find(x=>x.id===data)||{};
     const mo=APP.month;
     const rec=(DB.staff_approvals[mo]||{})[data];
     let items=[];
@@ -3706,13 +3773,13 @@ function renderModal(){
       <div class="tm" style="margin-bottom:10px">${sl.section} · ${sl.designation} · ${mo}</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         ${row('Basic salary','Rs'+sl.salary.toLocaleString())}
-        ${sl.ces&&sl.ces.length?sl.ces.map(ce=>row('Earn: '+ce.label,'+Rs'+ce.amount.toLocaleString(),ce.global?'(all)':'','#34d399')).join(''):''}
+        ${sl.ces&&sl.ces.length?sl.ces.map(ce=>row(ce.label,'+Rs'+ce.amount.toLocaleString(),ce.global?'(all)':'','#34d399')).join(''):''}
         ${sl.ceTotal>0?row('Total Earnings','+Rs'+sl.ceTotal.toLocaleString(),'','#34d399'):''}
         ${row('Day Late','-Rs'+Math.round(sl.lateDays*sl.ppd).toLocaleString(),`(${sl.tLate} lates − 2 allowed = ${sl.effectiveLates} late)`)}
         ${row('Half Leave','-Rs'+Math.round(sl.hlDays*sl.ppd).toLocaleString(),`(${sl.hlRaw} half leave)`)}
         ${row('Day Leave','-Rs'+Math.round(sl.dleaDays*sl.ppd).toLocaleString(),`(${sl.absent} absent + ${sl.casualLeave} casual leave)`)}
         ${row('Security','-Rs'+sl.secDed.toLocaleString(),sl.secDed>0?`(${sl.secPct}%${sl.secCompleted?' · completed':''})`:(sl.secCompleted?'(completed)':''))}
-        ${sl.cds&&sl.cds.length?sl.cds.map(cd=>row('Ded: '+cd.label,'-Rs'+cd.amount.toLocaleString(),cd.global?'(all)':'')).join(''):''}
+        ${sl.cds&&sl.cds.length?sl.cds.map(cd=>row(cd.label,'-Rs'+cd.amount.toLocaleString(),cd.global?'(all)':'')).join(''):''}
         <tr style="border-top:1px solid #1e293b"><td style="padding:9px 10px;font-weight:700;color:var(--text)">Total Deduction</td><td style="padding:9px 10px;text-align:right;font-weight:700;color:#f87171">-Rs${sl.deduction.toLocaleString()}</td></tr>
         <tr style="background:var(--inset)"><td style="padding:9px 10px;font-weight:700;color:var(--text)">Net Pay</td><td style="padding:9px 10px;text-align:right;font-weight:700;color:#34d399">Rs${sl.net.toLocaleString()}</td></tr>
       </table>`;
@@ -3980,6 +4047,29 @@ async function editStaff(id){
   await saveField('staff_users');closeModal();
 }
 
+// Mark a staff member as having left — sets their last working month.
+// Security stops from this month onward (already handled in calcSlip +
+// calcSecurityForMonth via the secExemptLeft / left_month check).
+async function saveLeftMonth(id){
+  const m=document.getElementById('m_left_month').value;
+  if(!m){ toast('Please select the last working month.','error'); return; }
+  const st=DB.staff_users.find(s=>s.id===id);
+  if(!st) return;
+  if(!await confirmDialog('Mark '+st.name+' as having left, effective '+fmtMonthLabel(m)+'?\n\nTheir salary will be included up to '+fmtMonthLabel(m)+'. Security deductions stop from this month. Future months will exclude them from attendance, salary sheets, and approval lists.')) return;
+  st.left_month=m;
+  await saveField('staff_users');closeModal();
+  toast(st.name+' marked as left (last working month: '+fmtMonthLabel(m)+').','success');
+}
+// Undo — clear the left status; staff returns to active roster.
+async function undoLeft(id){
+  const st=DB.staff_users.find(s=>s.id===id);
+  if(!st||!st.left_month) return;
+  if(!await confirmDialog('Undo the "left" status for '+st.name+'? They will be treated as an active staff member again.')) return;
+  delete st.left_month;
+  await saveField('staff_users');closeModal();
+  toast(st.name+' is now active again.','success');
+}
+
 async function deleteUser(id){
   if(!await confirmDialog('Delete this account?')) return;
   DB.staff_users=DB.staff_users.filter(u=>u.id!==id);
@@ -4073,16 +4163,22 @@ function addTempStaff(m){
   const section=document.getElementById('tmp_sec').value;
   const salary=parseInt(document.getElementById('tmp_sal').value)||0;
   const remarks=(document.getElementById('tmp_remarks').value||'').trim();
+  const bank_name=(document.getElementById('tmp_bank').value||'').trim();
+  const account_title=(document.getElementById('tmp_acc_title').value||'').trim();
+  const account_no=(document.getElementById('tmp_acc_no').value||'').trim();
   if(!name){ toast('Enter the staff name.','error'); return; }
   if(salary<=0){ toast('Enter a valid salary amount.','error'); return; }
   if(!DB.monthly_additions) DB.monthly_additions={};
   if(!DB.monthly_additions[m]) DB.monthly_additions[m]=[];
   const id='tmp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
-  DB.monthly_additions[m].push({id,name,section,salary,remarks});
+  DB.monthly_additions[m].push({id,name,section,salary,remarks,bank_name,account_title,account_no});
   saveField('monthly_additions');
   document.getElementById('tmp_name').value='';
   document.getElementById('tmp_sal').value='';
   document.getElementById('tmp_remarks').value='';
+  document.getElementById('tmp_bank').value='';
+  document.getElementById('tmp_acc_title').value='';
+  document.getElementById('tmp_acc_no').value='';
   toast(name+' added to '+fmtMonthLabel(m)+'.','success');
   R();
 }
