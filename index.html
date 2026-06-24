@@ -2412,7 +2412,7 @@ function pgApproveRelease(){
     </div>
     <div class="ov-note"><i class="ti ti-crown" style="flex-shrink:0"></i> Each approver reviews their section. Releasing a person's salary individually overrides any pending approval for that person.</div>
     ${(()=>{const ch=staff.filter(s=>releaseRemaining(m,s.id)>0);const sum=ch.reduce((a,s)=>a+releaseRemaining(m,s.id),0);return ch.length?`<div class="alert aw"><i class="ti ti-alert-triangle"></i> <span>Salary revised after release for <b>${ch.length}</b> staff — <b>Rs${sum.toLocaleString()}</b> still to be released: ${ch.map(s=>s.name+' (Rs'+releaseRemaining(m,s.id).toLocaleString()+')').join(', ')}. Use <b>Release remaining</b> in the table below.</span></div>`:'';})()}
-    ${(()=>{const lv=staff.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa55;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    ${(()=>{const lv=staff.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa88;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left this month</span>
       ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section}</span>`).join('')}
     </div>`:'';})()}
@@ -2427,7 +2427,7 @@ function pgApproveRelease(){
         cds.map(d=>chip(d.label,d.amount,d.global?'All staff':staffName(d.staffId),'#f87171')).join(''));
       if(ces.length) rows.push(`<span style="display:flex;align-items:center;gap:6px;color:#34d399;font-size:12px;font-weight:700"><i class="ti ti-cash"></i> Earnings</span>`+
         ces.map(e=>chip(e.label,e.amount,e.global?'All staff':staffName(e.staffId),'#34d399')).join(''));
-      return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">${rows.join('<span style="width:1px;height:20px;background:var(--border);margin:0 2px"></span>')}</div>`;
+      return `<div style="background:var(--surface2);border:1px solid ${cds.length&&ces.length?'#a78bfa88':cds.length?'#f8717166':'#34d39966'};border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">${rows.join('<span style="width:1px;height:20px;background:var(--border);margin:0 2px"></span>')}</div>`;
     })()}
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
       <div style="flex:1;background:var(--inset);border-radius:6px;height:8px;overflow:hidden">
@@ -2528,7 +2528,7 @@ function pgAllSlips(){
         ${monthPicker(m,{nav:true,max:lastSheetMonth(),style:'width:160px;margin-left:auto'})}
       </div>
       <div class="alert ai"><i class="ti ti-info-circle"></i> Approve or disapprove each staff member's salary. Disapproving requires a remark for the Director. &nbsp;<b>${reviewed}/${list.length} reviewed.</b></div>
-      ${(()=>{const lv=list.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa55;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      ${(()=>{const lv=list.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border:1px solid #a78bfa88;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left this month</span>
         ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section}</span>`).join('')}
       </div>`:'';})()}
@@ -3831,7 +3831,7 @@ function renderModal(){
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         ${row('Basic salary','Rs'+sl.salary.toLocaleString())}
         ${sl.ces&&sl.ces.length?sl.ces.map(ce=>row(ce.label,'+Rs'+ce.amount.toLocaleString(),ce.global?'(all)':'','#34d399')).join(''):''}
-        ${sl.ceTotal>0?row('Total Earnings','+Rs'+sl.ceTotal.toLocaleString(),'','#34d399'):''}
+        ${sl.ces&&sl.ces.length>1?row('Total Earnings','+Rs'+sl.ceTotal.toLocaleString(),'','#34d399'):''}
         ${row('Day Late','-Rs'+Math.round(sl.lateDays*sl.ppd).toLocaleString(),`(${sl.tLate} lates − 2 allowed = ${sl.effectiveLates} late)`)}
         ${row('Half Leave','-Rs'+Math.round(sl.hlDays*sl.ppd).toLocaleString(),`(${sl.hlRaw} half leave)`)}
         ${row('Day Leave','-Rs'+Math.round(sl.dleaDays*sl.ppd).toLocaleString(),`(${sl.absent} absent + ${sl.casualLeave} casual leave)`)}
