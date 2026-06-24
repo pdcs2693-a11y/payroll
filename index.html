@@ -639,9 +639,11 @@ function effPw(u){ return u ? ((((DB.settings||{}).system_users||{})[u.id]||{}).
 const RECOVERY_DEFAULT='PDCS-RESET-2026';
 function recoveryCode(){ return (((DB.settings||{}).recovery_code)||'').trim() || RECOVERY_DEFAULT; }
 function findUser(u,p){
-  return SYSTEM_USERS.find(x=>x.username===u&&effPw(x)===p)
-      || DB.staff_users.find(x=>x.username===u&&x.password===p)
-      || null;
+  const sys=SYSTEM_USERS.find(x=>x.username===u&&effPw(x)===p);
+  if(sys) return sys;
+  const st=DB.staff_users.find(x=>x.username===u&&x.password===p);
+  if(st&&st.login_blocked) return null;
+  return st||null;
 }
 // Find any account by username, ignoring password (used by the recovery flow).
 function findUserByName(u){
@@ -1890,7 +1892,7 @@ function pgLeftStaff(){
         <td style="white-space:nowrap;font-weight:600">${s.name}</td>
         <td style="color:var(--text3)">${s.designation||'—'}</td>
         <td>Rs${(s.salary||0).toLocaleString()}</td>
-        <td style="white-space:nowrap">${fmtMonthLabel(s.left_month)}${s.left_date?` <span class="tm">(${s.left_date})</span>`:''}</td>
+        <td style="white-space:nowrap">${fmtMonthLabel(s.left_month)}${s.left_date?` <span class="tm">(${s.left_date})</span>`:''}${s.login_blocked?` <span class="badge br" style="font-size:9px"><i class="ti ti-lock"></i></span>`:''}</td>
         <td style="white-space:nowrap"><button class="btn bou bsm" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button></td>
         <td style="white-space:nowrap">
           <button class="btn bou bsm" onclick="openLeftStaffPdf('${s.id}')"><i class="ti ti-file-download"></i> PDF</button>
@@ -3591,6 +3593,7 @@ function renderModal(){
     ${s.left_month
       ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
            <span class="badge bx"><i class="ti ti-logout"></i> Left since ${fmtMonthLabel(s.left_month)}${s.left_date?` (${s.left_date})`:''}</span>
+           ${s.login_blocked?`<span class="badge br"><i class="ti ti-lock"></i> Login blocked</span>`:''}
            <button class="btn bou bsm" onclick="undoLeft('${data}')"><i class="ti ti-arrow-back-up"></i> Undo — still employed</button>
          </div>`
       : `<div style="margin-bottom:10px">
@@ -3600,6 +3603,7 @@ function renderModal(){
              <input type="date" id="m_left_date" class="inp" style="flex:1;min-width:140px" value="">
              <button class="btn brd bsm" onclick="saveLeftMonth('${data}')"><i class="ti ti-logout"></i> Mark as Left</button>
            </div>
+           <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="m_block_login" style="width:16px;height:16px"> <span>Restrict portal login access</span></label>
            <div class="tm" style="margin-top:4px;font-size:10px">Their salary is included up to this month. Security deductions stop from this month onward. Future months will exclude them from the payroll.</div>
          </div>`}
     <button class="btn bgr" style="width:100%;margin-top:8px;padding:10px" onclick="editStaff('${data}')"><i class="ti ti-check"></i> Save Changes</button>`;
@@ -4108,6 +4112,7 @@ async function saveLeftMonth(id){
   st.left_month=m;
   const d=document.getElementById('m_left_date').value;
   if(d) st.left_date=d;
+  if(document.getElementById('m_block_login').checked) st.login_blocked=true;
   await saveField('staff_users');closeModal();
   toast(st.name+' marked as left (last working month: '+fmtMonthLabel(m)+').','success');
 }
@@ -4118,6 +4123,7 @@ async function undoLeft(id){
   if(!await confirmDialog('Undo the "left" status for '+st.name+'? They will be treated as an active staff member again.')) return;
   delete st.left_month;
   delete st.left_date;
+  delete st.login_blocked;
   await saveField('staff_users');closeModal();
   toast(st.name+' is now active again.','success');
 }
