@@ -2013,7 +2013,7 @@ function salaryTableHTML(list, m, opts={}){
             <td style="color:var(--text4)">${i+1}</td>
             <td style="white-space:nowrap">${s.name}</td>
             <td><span class="sec-${s.section.toLowerCase()}">${s.section[0]}</span></td>
-            <td style="color:var(--text3)">${s.designation}</td>
+            <td style="color:var(--text3)">${s.designation}${s.remarks?`<span class="tm" style="display:block;font-size:10px;color:var(--text3)">${s.remarks}</span>`:''}</td>
             <td>Rs${sl.salary.toLocaleString()}</td>
             ${detail?`<td style="color:#fb923c">${sl.effectiveLates}</td>
             <td style="color:#fb923c">${sl.hlRaw}</td>
@@ -2331,6 +2331,7 @@ function pgApproveRelease(){
     const by=(DB.release_by[m]||{})[s.id];
     return `<span class="badge ${meta.cls}" title="${meta.label}"><i class="ti ti-${meta.icon}"></i></span>
       ${hasLeft(s)?`<span class="badge bx" title="${isLastMonth(s)?'This is their LAST month — they have left':'Left since '+fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i> Left${isLastMonth(s)?' (Last month)':''}</span>`:''}
+      ${s.remarks?`<span class="tm" style="font-size:10px;color:var(--text3);margin-right:6px"><i class="ti ti-message-2"></i> ${s.remarks}</span>`:''}
       ${(a&&a.remarks)?`<button class="btn bou bsm" style="border-color:${meta.color}88;color:${meta.color}" onclick="openModal('view_remark','${s.id}')"><i class="ti ti-message-2"></i> Remarks</button>`:''}
       <button class="btn bou bsm" title="Account details" onclick="openModal('account_details','${s.id}')"><i class="ti ti-building-bank"></i> Account</button>
       <button class="btn bou bsm" onclick="openModal('slip_detail','${s.id}|${m}')"><i class="ti ti-list-details"></i> Details</button>
