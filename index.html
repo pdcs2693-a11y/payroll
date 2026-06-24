@@ -3605,7 +3605,7 @@ function renderModal(){
            <label class="lbl">Mark this staff member as having left</label>
            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
              <div style="flex:1;min-width:160px">${monthPicker(new Date().toISOString().slice(0,7),{id:'m_left_month',style:'width:100%',placeholder:'Select last working month'})}</div>
-             <input type="date" id="m_left_date" class="inp" style="flex:1;min-width:140px" value="">
+             <div style="flex:1;min-width:140px">${datePicker('',{id:'m_left_date'})}</div>
              <button class="btn brd bsm" onclick="saveLeftMonth('${data}')"><i class="ti ti-logout"></i> Mark as Left</button>
            </div>
            <div class="tm" style="margin-top:4px;font-size:10px">Their salary is included up to this month. Security deductions stop from this month onward. Future months will exclude them from the payroll.</div>
