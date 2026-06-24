@@ -1881,6 +1881,7 @@ function pgLeftStaff(){
   return `<div class="card">
     <div class="ct"><i class="ti ti-logout"></i> Left Staff <span class="badge bx" style="margin-left:auto">${staff.length}</span></div>
     <div class="alert ai" style="font-size:11px"><i class="ti ti-info-circle"></i> Staff marked as left are excluded from attendance, salary sheets and approval lists after their last working month. Undo to move them back to active Staff Records.</div>
+    ${searchBox('staff-row','Search left staff by name, ID or designation…')}
     <div style="overflow-x:auto"><table style="min-width:900px"><thead><tr>
       <th>ID</th><th>Name</th><th>Designation</th>
       <th>Salary</th><th>Left Since</th><th>Bank Account</th>
@@ -1890,7 +1891,7 @@ function pgLeftStaff(){
       const rows=staff.filter(s=>s.section===sec);
       if(!rows.length) return [];
       return [secHeaderRow(sec,7),
-        ...rows.map(s=>`<tr class="staff-row">
+        ...rows.map(s=>`<tr class="staff-row" data-search="${ds(s.id+' '+s.name+' '+s.section+' '+s.designation)}">
           <td><code style="font-size:10px;color:var(--text2)">${s.id}</code></td>
           <td style="white-space:nowrap;font-weight:600">${s.name}</td>
           <td style="color:var(--text3)">${s.designation||'—'}</td>
