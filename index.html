@@ -930,7 +930,7 @@ function getLeaveBalance(staffId, year){
 // RULES:
 //  DL  (Day Late)   : t_late column. First 2 free. (t_late-2)/4 = deducted days (decimal)
 //  H.L (Half Leave) : hl column — each = 0.5 day
-//  D.Lea (Day Leave): absent + casual_leave — each = 1 full day. Absent also uses leave quota.
+//  D.Lea (Day Leave): absent days covered by annual/sick leave quota first; excess + casual_leave deducted.
 //  Security         : security_pct % of NET salary (after all other deductions).
 //                     Capped so cumulative total never exceeds 1× basic salary.
 //                     Last month: only remaining balance deducted.
@@ -961,8 +961,30 @@ function calcSlip(staffId, month){
   // H.L
   const hlDays=(att.hl||0)*0.5;
 
-  // D.Lea
-  const dleaDays=(att.absent||0)+(att.casual_leave||0);
+  // ── Leave-quota adjustment ──
+  // annual_leave entries are NOT deducted (quota-covered, shown as "Annual Leave").
+  // sick_leave entries are NOT deducted (quota-covered, shown as "Sick Leave").
+  // absent days use annual leave quota first, then sick leave quota; only excess is deducted.
+  // casual_leave is always deducted (unpaid, no quota).
+  const rawAbsent=att.absent||0;
+  const rawCasual=att.casual_leave||0;
+  const year=month.slice(0,4);
+  const q=getEffectiveQuota(staffId, year);
+  // Count annual/sick used BEFORE this month (getLeaveBalance includes this month)
+  let annUsedBefore=0, sickUsedBefore=0;
+  Object.keys(DB.attendance).forEach(m=>{
+    if(!m.startsWith(year)||m>=month) return;
+    const a=(DB.attendance[m]||{})[staffId]||{};
+    annUsedBefore+=(a.annual_leave||0)+(a.absent||0);
+    sickUsedBefore+=(a.sick_leave||0);
+  });
+  const annLeft=Math.max(0, (q.annual||12)-annUsedBefore);
+  const sickLeft=Math.max(0, (q.sick||6)-sickUsedBefore);
+  const absentCovered=Math.min(rawAbsent, annLeft);
+  const absentAfterAnn=Math.max(0, rawAbsent-absentCovered);
+  const sickCovered=Math.min(absentAfterAnn, sickLeft);
+  const effectiveAbsent=Math.max(0, absentAfterAnn-sickCovered);
+  const dleaDays=effectiveAbsent+rawCasual;
 
   // Custom deductions (only those assigned to THIS month)
   const cds=DB.custom_deds.filter(c=>(c.global||c.staffId===staffId)&&c.month===month);
@@ -1979,7 +2001,7 @@ function pgAttendance(){
   // Admin editable
   // Columns: Days | T.Late | Absent | Casual Leave | Annual Leave | Sick Leave | H.Leave
   // DL in salary sheet = max(0, T.Late-2)/4  (decimal days)
-  // D.Lea = absent + casual_leave
+  // D.Lea = absent (after annual/sick quota) + casual_leave
   const cols =['days','t_late','absent','casual_leave','annual_leave','sick_leave','hl'];
   const hdrs =['Days','T.Late','Absent','Cas.L','Ann.L','Sick.L','Half.L'];
   return `<div class="card">
@@ -1990,7 +2012,7 @@ function pgAttendance(){
     ${ed?`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn brd bsm" onclick="deleteAttendance('${m}')"><i class="ti ti-trash"></i> Delete Attendance</button></div>`:''}
     <div class="alert ai" style="margin-bottom:10px;font-size:11px">
       <i class="ti ti-info-circle"></i>
-      <span><b>T.Late:</b> first 2 free, then every 4 = 1 day deducted (e.g. 8 lates → 8−2=6 → 6÷4=1.5 days) &nbsp;|&nbsp; <b>Half.L:</b> each = 0.5 day &nbsp;|&nbsp; <b>Absent+Cas.L</b> = D.Lea full days</span>
+      <span><b>T.Late:</b> first 2 free, then every 4 = 1 day deducted (e.g. 8 lates → 8−2=6 → 6÷4=1.5 days) &nbsp;|&nbsp; <b>Half.L:</b> each = 0.5 day &nbsp;|&nbsp; <b>D.Lea:</b> absent (quota-covered first) + casual leave = paid deduction days</span>
     </div>
     ${searchBox('att-row','Search staff by name…')}
     <div style="overflow-x:auto">
@@ -2812,7 +2834,7 @@ function pgMyLeaves(){
         <div class="ql2">Unpaid, no quota</div>
       </div>
     </div>
-    <div class="alert ai"><i class="ti ti-info-circle"></i> Absent days use annual quota (1 each) + deduct salary. Carry-forward: unused months accumulate.</div>
+    <div class="alert ai"><i class="ti ti-info-circle"></i> Absent days first consume annual leave quota, then sick leave quota — only excess beyond both is deducted from salary. Casual leave is always unpaid.</div>
     <div style="overflow-x:auto">
     <table><thead><tr><th>Month</th><th>Absent</th><th>Ann.L</th><th>Sick.L</th><th>Cas.L</th></tr></thead><tbody>
     ${months.map(mn=>{
