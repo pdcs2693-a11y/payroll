@@ -1606,16 +1606,18 @@ function renderPage(){
 function pgDashboard(){
   const m=APP.month,r=APP.user.role;
   const staff=getStaffOnly();
+  const temps=DB.monthly_additions?.[m]||[];
   const ap=apStatus(m);
   const relCount=staff.filter(s=>staffReleased(m,s.id)).length;
   const released=staff.length>0&&relCount===staff.length;
   const hasAtt=Object.keys(DB.attendance[m]||{}).length>0;
   const hasSheet=Object.keys(DB.salary_sheets[m]||{}).length>0;
-  const payroll=staff.reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
+  const allStaff=m=>{const s=getStaffOnly(),t=DB.monthly_additions?.[m]||[];return s.concat(t);};
+  const payroll=allStaff(m).reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
   return `
   ${(()=>{
     const showAmt=(r==='director'||r==='admin'); // department net amounts are sensitive
-    const secNet=sec=>staff.filter(s=>s.section===sec).reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
+    const secNet=sec=>allStaff(m).filter(s=>s.section===sec).reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
     const sc=(icon,color,val,label,small,sub)=>`<div class="stat">
       <div class="stat-ico" style="background:${color}22;color:${color}"><i class="ti ti-${icon}"></i></div>
       <div style="min-width:0;flex:1"><div class="sv" style="${small?'font-size:18px;':''}overflow-wrap:anywhere">${val}</div><div class="sl">${label}</div>${sub?`<div style="font-size:12px;font-weight:700;color:${color};margin-top:3px;overflow-wrap:anywhere">${sub}</div>`:''}</div>
