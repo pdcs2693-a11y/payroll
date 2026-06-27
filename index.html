@@ -624,7 +624,11 @@ async function loadDB(){
   DB_FIELDS.forEach(f=>{
     FDB.ref(FB_ROOT+'/'+f).on('value', snap=>{
       DB[f] = normalizeField(f, snap.val());
-      if(f==='settings') cacheBranding(); // keep the splash logo/name fresh for next load
+      if(f==='settings'){
+        cacheBranding();
+        const sm=(DB.settings||{}).selected_month;
+        if(sm && sm!==APP.month){ APP.month=sm; }
+      } // keep the splash logo/name fresh for next load
       // Don't re-render while the staff member is mid-signature, or a remote
       // sync would wipe the canvas. It'll refresh on their next action.
       if(APP.user && !(APP.modal&&APP.modal.type==='sign_pad')) R();
@@ -1294,6 +1298,12 @@ function mpYear(id,d){
   el.dataset.year=(+el.dataset.year)+d;
   mpRefresh(el);
 }
+// Persist the selected month to Firebase so it syncs across devices.
+function saveMonth(m){
+  if(!DB.settings) DB.settings={};
+  DB.settings.selected_month=m;
+  saveField('settings');
+}
 function mpPick(id,mi){
   const el=document.getElementById(id); if(!el) return;
   const year=+el.dataset.year;
@@ -1302,7 +1312,7 @@ function mpPick(id,mi){
   if(max && val>max) return; // beyond the allowed upper bound — ignore
   el.dataset.val=val;
   const pop=el.querySelector('.mpick-pop');
-  if(pop.dataset.nav){ el.classList.remove('open'); APP.month=val; R(); return; }
+  if(pop.dataset.nav){ el.classList.remove('open'); APP.month=val; saveMonth(val); R(); return; }
   const inputId=pop.dataset.input;
   if(inputId){ const inp=document.getElementById(inputId); if(inp){ inp.value=val; inp.dispatchEvent(new Event('change')); } }
   el.querySelector('.mpick-disp').textContent=MP_FULL[mi]+' '+year;
@@ -4968,7 +4978,7 @@ function hideBootLoader(){
   const bl=document.getElementById('boot-loader');
   if(bl){ bl.classList.add('hide'); setTimeout(()=>{ try{bl.remove();}catch(_){} }, 600); }
 }
-loadDB().then(()=>{ restoreSession(); R(); }).catch(e=>{ console.error(e); R(); }).finally(hideBootLoader);
+loadDB().then(()=>{ const sm=(DB.settings||{}).selected_month; if(sm) APP.month=sm; restoreSession(); R(); }).catch(e=>{ console.error(e); R(); }).finally(hideBootLoader);
 </script>
 </body>
 </html>
