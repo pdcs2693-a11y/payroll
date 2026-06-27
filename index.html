@@ -216,7 +216,7 @@ select.inp option{background:var(--surface2)}
   .sg{grid-template-columns:repeat(2,1fr);gap:8px}
   .stat{padding:10px;gap:10px;border-radius:10px}
   .stat-ico{width:36px;height:36px;font-size:17px;border-radius:9px}
-  .sv{font-size:18px;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal!important;word-break:normal!important}
+  .sv{font-size:18px}
   .sl{font-size:9px;margin-top:3px}
   .frow{grid-template-columns:1fr}
   th,td{padding:5px 6px;font-size:10px;white-space:nowrap}
@@ -276,7 +276,7 @@ select.inp option{background:var(--surface2)}
   /* sidebar overlay backdrop */
   .sidebar.open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:-1}
   /* stat value overflow */
-  .sv{overflow-wrap:anywhere;word-break:break-word}
+  .sv{overflow-wrap:break-word;word-break:break-word}
   /* welcome text */
   .sg+.card .ct{font-size:12px}
   /* card margin reset */
@@ -1642,7 +1642,7 @@ function pgDashboard(){
     const secNet=sec=>allStaff(m).filter(s=>s.section===sec).reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
     const sc=(icon,color,val,label,small,sub)=>`<div class="stat">
       <div class="stat-ico" style="background:${color}22;color:${color}"><i class="ti ti-${icon}"></i></div>
-      <div style="min-width:0;flex:1"><div class="sv" style="${small?'font-size:18px;':''}white-space:nowrap">${val}</div><div class="sl">${label}</div>${sub?`<div style="font-size:12px;font-weight:700;color:${color};margin-top:3px;white-space:nowrap">${sub}</div>`:''}</div>
+      <div style="min-width:0;flex:1"><div class="sv" style="${small?'font-size:18px;':''}">${val}</div><div class="sl">${label}</div>${sub?`<div style="font-size:12px;font-weight:700;color:${color};margin-top:3px">${sub}</div>`:''}</div>
     </div>`;
     const deptSub=sec=>showAmt?'Rs'+secNet(sec).toLocaleString():'';
     return `<div class="sg">
@@ -1690,7 +1690,7 @@ function pgDashboard(){
     const remaining=Math.max(0,payroll-issued);
     const cell=(icon,color,label,val,note)=>`<div style="flex:1;min-width:160px;display:flex;align-items:center;gap:12px;padding:4px">
       <div class="stat-ico" style="width:42px;height:42px;font-size:20px;background:${color}22;color:${color}"><i class="ti ti-${icon}"></i></div>
-      <div style="min-width:0"><div style="font-size:20px;font-weight:800;color:var(--text);line-height:1.1;white-space:nowrap">Rs${val.toLocaleString()}</div><div class="sl">${label}</div>${note?`<div class="tm" style="margin-top:2px">${note}</div>`:''}</div>
+      <div style="min-width:0"><div style="font-size:20px;font-weight:800;color:var(--text);line-height:1.1">Rs${val.toLocaleString()}</div><div class="sl">${label}</div>${note?`<div class="tm" style="margin-top:2px">${note}</div>`:''}</div>
     </div>`;
     return `<div class="card">
       <div class="ct"><i class="ti ti-report-money"></i> Salary Disbursement — ${m}
@@ -2638,7 +2638,7 @@ function pgMyHome(){
 
   const kpi=(icon,color,val,label,sub,subColor,onclick)=>`<div class="stat"${onclick?` onclick="${onclick}" style="cursor:pointer" title="Tap for the month-wise breakdown"`:''}>
     <div class="stat-ico" style="background:${color}22;color:${color}"><i class="ti ti-${icon}"></i></div>
-    <div style="min-width:0;flex:1"><div class="sv" style="font-size:22px;overflow-wrap:anywhere">${val}${onclick?' <i class="ti ti-chevron-right" style="font-size:13px;color:var(--text3);vertical-align:middle"></i>':''}</div><div class="sl">${label}</div>${sub?`<div style="font-size:11px;color:${subColor||color};font-weight:700;margin-top:3px">${sub}</div>`:''}</div>
+    <div style="min-width:0;flex:1"><div class="sv" style="font-size:22px">${val}${onclick?' <i class="ti ti-chevron-right" style="font-size:13px;color:var(--text3);vertical-align:middle"></i>':''}</div><div class="sl">${label}</div>${sub?`<div style="font-size:11px;color:${subColor||color};font-weight:700;margin-top:3px">${sub}</div>`:''}</div>
   </div>`;
 
   return `
