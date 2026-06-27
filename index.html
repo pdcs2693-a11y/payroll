@@ -213,10 +213,11 @@ select.inp option{background:var(--surface2)}
   .sidebar.open{transform:translateX(0)}
   .mob-menu-btn{display:block}
   .content{padding:10px}
-  .sg{grid-template-columns:repeat(2,1fr);gap:8px}
+  .sg{grid-template-columns:1fr 1fr;gap:8px}
   .stat{padding:10px;gap:10px;border-radius:10px}
   .stat-ico{width:36px;height:36px;font-size:17px;border-radius:9px}
-  .sv{font-size:18px}
+  .sv{font-size:16px!important}
+  .sub-amt{font-size:11px}
   .sl{font-size:9px;margin-top:3px}
   .frow{grid-template-columns:1fr}
   th,td{padding:5px 6px;font-size:10px;white-space:nowrap}
@@ -276,7 +277,8 @@ select.inp option{background:var(--surface2)}
   /* sidebar overlay backdrop */
   .sidebar.open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:-1}
   /* stat value overflow */
-  .sv{overflow-wrap:break-word;word-break:break-word}
+  .sv{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sub-amt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
   /* welcome text */
   .sg+.card .ct{font-size:12px}
   /* card margin reset */
@@ -1642,7 +1644,7 @@ function pgDashboard(){
     const secNet=sec=>allStaff(m).filter(s=>s.section===sec).reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
     const sc=(icon,color,val,label,small,sub)=>`<div class="stat">
       <div class="stat-ico" style="background:${color}22;color:${color}"><i class="ti ti-${icon}"></i></div>
-      <div style="min-width:0;flex:1"><div class="sv" style="${small?'font-size:18px;':''}">${val}</div><div class="sl">${label}</div>${sub?`<div style="font-size:12px;font-weight:700;color:${color};margin-top:3px">${sub}</div>`:''}</div>
+      <div style="min-width:0;flex:1"><div class="sv" style="${small?'font-size:18px;':''}">${val}</div><div class="sl">${label}</div>${sub?`<div class="sub-amt" style="font-size:12px;font-weight:700;color:${color};margin-top:3px">${sub}</div>`:''}</div>
     </div>`;
     const deptSub=sec=>showAmt?'Rs'+secNet(sec).toLocaleString():'';
     return `<div class="sg">
