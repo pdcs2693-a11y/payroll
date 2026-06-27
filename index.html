@@ -1637,8 +1637,13 @@ function renderPage(){
 }
 
 // ─── PAGES ────────────────────────────────────────────────────
+// Latest month that has a generated salary sheet (for dashboard overview).
+function latestSheetMonth(){
+  const months=Object.keys(DB.salary_sheets||{}).filter(m=>Object.keys(DB.salary_sheets[m]||{}).length>0).sort().reverse();
+  return months[0]||null;
+}
 function pgDashboard(){
-  const m=APP.month,r=APP.user.role;
+  const m=latestSheetMonth()||APP.month,r=APP.user.role;
   const staff=getStaffOnly();
   const temps=DB.monthly_additions?.[m]||[];
   const ap=apStatus(m);
