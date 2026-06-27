@@ -1210,9 +1210,7 @@ function rowTint(m, s){
 function slotStaff(key, m){
   const apr=APPROVER_LIST.find(a=>a.key===key);
   if(!apr) return [];
-  const regular=getStaffOnly().filter(s=>apr.sections.includes(s.section) && (!m || activeInMonth(s, m)));
-  const temps=((DB.monthly_additions||{})[m]||[]).filter(t=>apr.sections.includes(t.section));
-  return [...regular,...temps];
+  return getStaffOnly().filter(s=>apr.sections.includes(s.section) && (!m || activeInMonth(s, m)));
 }
 // A slot is "complete" when the director overrode it OR ITS OWN approver has given a
 // decision for every staff member in their section(s). One approver's decision never
@@ -2069,9 +2067,9 @@ function pgAttendance(){
 // Reusable columnar salary table (same layout admin sees), for a given staff list.
 // opts.actionHeader (string) + opts.actionCell(staff, slip) add an extra column.
 function salaryTableHTML(list, m, opts={}){
-  const secs=opts.allowedSections || SECTIONS.filter(sec=>list.some(s=>s.section===sec));
+  const secs=SECTIONS.filter(sec=>list.some(s=>s.section===sec));
   const total=list.reduce((a,s)=>{const sl=calcSlip(s.id,m);return a+(sl?sl.net:0);},0);
-  const temps=((DB.monthly_additions||{})[m]||[]).filter(t=>secs.includes(t.section));
+  const temps=(DB.monthly_additions||{})[m]||[];
   const tempTotal=temps.reduce((a,t)=>a+(t.salary||0),0);
   const act=!!opts.actionCell;
   const detail=!opts.compact; // compact hides DL/H.L/D.Lea/Security/Custom columns
@@ -2537,9 +2535,7 @@ function pgAllSlips(){
   }
   const allowed=visibleSectionsFor(u);
   const list=getStaffOnly().filter(s=>allowed.includes(s.section) && activeInMonth(s, m));
-  const tempsForMe=((DB.monthly_additions||{})[m]||[]).filter(t=>allowed.includes(t.section));
-  const reviewed=list.filter(s=>myApproverDecision(m,s.id)).length+tempsForMe.filter(t=>myApproverDecision(m,t.id)).length;
-  const totalStaff=list.length+tempsForMe.length;
+  const reviewed=list.filter(s=>myApproverDecision(m,s.id)).length;
   // Per-row decision dropdown: Approve / Disapprove / Conditional (last two need a remark).
   // Shows THIS approver's own decision, plus chips for any OTHER approver (e.g. the
   // Admin Head) who covers the same person — so each approver still reviews independently.
@@ -2555,10 +2551,6 @@ function pgAllSlips(){
     const status=a?a.status:'';
     const meta=apprMeta(status);
     const leftBadge=hasLeft(s)?`<span class="badge bx" style="margin-left:2px" title="${s.left_month===m?'Last month — staff has left':'Left since '+fmtMonthLabel(s.left_month)}"><i class="ti ti-logout"></i></span>`:'';
-    const myKeys=actingApproverKeys(u.id, s.id);
-    if(!myKeys.length){
-      return `${leftBadge}<span class="badge bx" style="padding:6px 12px"><i class="ti ti-eye-off"></i> Not your section</span>`;
-    }
     if(staffReleased(m,s.id)){
       return `${leftBadge}<span class="badge bg" style="padding:6px 12px"><i class="ti ti-lock"></i> Salary Released</span>${otherChips(s)}`;
     }
@@ -2577,15 +2569,15 @@ function pgAllSlips(){
       <div class="ct"><i class="ti ti-file-invoice"></i> ${allowed.join(' & ')+' — Salary Approval'}
         ${monthPicker(m,{nav:true,max:lastSheetMonth(),style:'width:160px;margin-left:auto'})}
       </div>
-      <div class="alert ai"><i class="ti ti-info-circle"></i> Approve or disapprove each staff member's salary. Disapproving requires a remark for the Director. &nbsp;<b>${reviewed}/${totalStaff} reviewed.</b></div>
+      <div class="alert ai"><i class="ti ti-info-circle"></i> Approve or disapprove each staff member's salary. Disapproving requires a remark for the Director. &nbsp;<b>${reviewed}/${list.length} reviewed.</b></div>
       ${(()=>{const lv=list.filter(s=>hasLeft(s)&&s.left_month===m);return lv.length?`<div style="background:var(--surface2);border-left:4px solid #a78bfa;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="display:flex;align-items:center;gap:6px;color:#a78bfa;font-size:12px;font-weight:700"><i class="ti ti-logout"></i> Left this month</span>
         ${lv.map(s=>`<span class="badge bx" style="font-size:10px;padding:4px 10px"><i class="ti ti-user"></i> ${s.name} <span style="color:var(--text4)">·</span> ${s.section}</span>`).join('')}
       </div>`:'';})()}
       ${list.length===0?'<p class="tm">No staff in your section for this view.</p>':
-        salaryTableHTML(list,m,{actionHeader:'Decision',actionCell,rowStyle:leftRowStyle,allowedSections:allowed})}
-      ${(totalStaff&&reviewed<totalStaff)?`<div style="display:flex;justify-content:flex-end;margin-top:14px">
-        <button class="btn bou" onclick="approveAllRemaining('${m}')"><i class="ti ti-checks"></i> Approve all remaining (${totalStaff-reviewed})</button>
+        salaryTableHTML(list,m,{actionHeader:'Decision',actionCell,rowStyle:leftRowStyle})}
+      ${(list.length&&reviewed<list.length)?`<div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button class="btn bou" onclick="approveAllRemaining('${m}')"><i class="ti ti-checks"></i> Approve all remaining (${list.length-reviewed})</button>
       </div>`:''}
     </div>`;
   }
@@ -4604,13 +4596,11 @@ async function submitRemark(sid,status){
 async function approveAllRemaining(m){
   const allowed=visibleSectionsFor(APP.user);
   const list=getStaffOnly().filter(s=>allowed.includes(s.section)&&activeInMonth(s,m)&&!myApproverDecision(m,s.id)&&!staffReleased(m,s.id));
-  const temps=((DB.monthly_additions||{})[m]||[]).filter(t=>allowed.includes(t.section)&&!myApproverDecision(m,t.id)&&!staffReleased(m,t.id));
-  const all=[...list,...temps];
-  if(!all.length) return;
-  if(!await confirmDialog('Approve all '+all.length+' remaining staff for '+m+'?')) return;
+  if(!list.length) return;
+  if(!await confirmDialog('Approve all '+list.length+' remaining staff for '+m+'?')) return;
   if(!DB.staff_approvals[m]) DB.staff_approvals[m]={};
   const date=new Date().toLocaleDateString();
-  all.forEach(s=>{
+  list.forEach(s=>{
     let rec=DB.staff_approvals[m][s.id];
     if(!rec || rec.status!==undefined) rec=DB.staff_approvals[m][s.id]={};
     actingApproverKeys(APP.user.id, s.id).forEach(k=>{ rec[k]={status:'approved',remarks:'',by:APP.user.name,date}; });
