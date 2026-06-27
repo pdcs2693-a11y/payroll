@@ -1093,7 +1093,7 @@ function visibleSectionsFor(user){
   if(user.role==='director'||user.role==='admin') return [...SECTIONS];
   const roles=getApproverRoles(user.id);
   const secs=new Set();
-  APPROVER_LIST.filter(a=>roles.includes(a.key)).forEach(a=>a.sections.forEach(s=>secs.add(s)));
+  APPROVER_LIST.filter(a=>roles.includes(a.key)).forEach(a=>(a.sections||[]).forEach(s=>secs.add(s)));
   return [...secs];
 }
 // ─── PER-STAFF, PER-APPROVER APPROVAL ─────────────────────────
@@ -1210,8 +1210,8 @@ function rowTint(m, s){
 function slotStaff(key, m){
   const apr=APPROVER_LIST.find(a=>a.key===key);
   if(!apr) return [];
-  const regular=getStaffOnly().filter(s=>apr.sections.includes(s.section) && (!m || activeInMonth(s, m)));
-  const temps=((DB.monthly_additions||{})[m]||[]).filter(t=>apr.sections.includes(t.section));
+  const regular=getStaffOnly().filter(s=>(apr.sections||[]).includes(s.section) && (!m || activeInMonth(s, m)));
+  const temps=((DB.monthly_additions||{})[m]||[]).filter(t=>(apr.sections||[]).includes(t.section));
   return [...regular,...temps];
 }
 // A slot is "complete" when the director overrode it OR ITS OWN approver has given a
