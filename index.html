@@ -84,9 +84,6 @@ th{padding:8px 10px;text-align:left;color:var(--text3);font-weight:500;border-bo
 td{padding:8px 10px;border-bottom:1px solid var(--border-soft);color:var(--text);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--inset)}
-.scroll-table{max-height:65vh;overflow:auto;border:1px solid var(--border-soft);border-radius:8px}
-.scroll-table table{min-width:unset}
-.scroll-table thead th{position:sticky;top:0;background:var(--surface2);z-index:2;box-shadow:0 1px 0 var(--border)}
 .inp{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px;outline:none}
 .inp:focus{border-color:#3b82f6}
 .inp-sm{width:55px;padding:4px 5px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none}
@@ -2004,7 +2001,7 @@ function pgAttendance(){
         ${monthPicker(m,{nav:true,max:attMax,style:'width:160px;margin-left:auto'})}
       </div>
       ${searchBox('att-row','Search staff by name…')}
-      <div class="scroll-table" style="overflow-x:auto">
+      <div style="overflow-x:auto">
       <table style="min-width:600px"><thead><tr>
         <th>Name</th><th>Sec</th><th>T.Late</th><th>Absent</th><th>Cas.L</th><th>Ann.L</th><th>Sick.L</th><th>Half.L</th><th>Deduction</th><th>Net Pay</th><th>Ack</th>
       </tr></thead><tbody>
@@ -2051,7 +2048,7 @@ function pgAttendance(){
       <span><b>T.Late:</b> first 2 free, then every 4 = 1 day deducted (e.g. 8 lates → 8−2=6 → 6÷4=1.5 days) &nbsp;|&nbsp; <b>Half.L:</b> each = 0.5 day &nbsp;|&nbsp; <b>D.Lea:</b> absent (quota-covered first) + casual leave = paid deduction days</span>
     </div>
     ${searchBox('att-row','Search staff by name…')}
-    <div class="scroll-table" style="overflow-x:auto">
+    <div style="overflow-x:auto">
     <table style="min-width:700px"><thead><tr>
       <th>Name</th><th>Quota</th>${hdrs.map(h=>`<th>${h}</th>`).join('')}${ed?'<th></th>':''}
     </tr></thead><tbody>
@@ -2102,7 +2099,7 @@ function pgAttendanceAck(){
       :(canManage?`<div class="alert aw"><i class="ti ti-alert-triangle"></i> Acknowledgment hasn't been requested for ${mLabel} yet.</div>`:`<div class="alert ai"><i class="ti ti-info-circle"></i> Acknowledgment hasn't been requested for ${mLabel} yet.</div>`)}
     ${canManage?`<button class="btn ${requested?'bou':'bgr'}" style="width:100%;padding:11px;margin-bottom:14px" onclick="genAttendanceAck('${m}')"><i class="ti ti-send"></i> ${requested?'Re-send / Refresh Acknowledgment Requests':'Generate Attendance Acknowledgment for '+mLabel}</button>`:''}
     ${searchBox('ack-row','Search staff by name…')}
-    <div class="scroll-table" style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th>Name</th><th>Sec</th><th>Status</th><th>Date</th></tr></thead><tbody>
+    <div style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th>Name</th><th>Sec</th><th>Status</th><th>Date</th></tr></thead><tbody>
     ${SECTIONS.flatMap(sec=>{
       const rows=staff.filter(s=>s.section===sec);
       if(!rows.length) return [];
