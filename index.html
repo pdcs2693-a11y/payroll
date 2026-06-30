@@ -527,6 +527,7 @@ let DB = {
     {id:'C25', username:'ms.irum',      password:'staff123', role:'staff', name:'Ms Irum',          section:'College', designation:'Coordinator', salary:20000, security:false, security_pct:0, join_month:'2022-04', increment_date:null},
   ],
   attendance: {},
+  attendance_ack: {}, // {month: {staffId: {status:'pending'|'acknowledged', date, by}}} — monthly attendance acknowledgment workflow
   salary_sheets: {},
   custom_deds: [],
   custom_earnings: [],
@@ -556,7 +557,7 @@ let APP = {user:null, tab:'dashboard', modal:null, month:prevMonth(new Date().to
 const SECTIONS = ['Admin','School','College','Domestic'];
 
 // ─── STORAGE (Firebase Realtime Database) ─────────────────────
-const DB_FIELDS = ['staff_users','attendance','salary_sheets','custom_deds','custom_earnings',
+const DB_FIELDS = ['staff_users','attendance','attendance_ack','salary_sheets','custom_deds','custom_earnings',
   'approvals','releases','receipts','leave_overrides','approver_map',
   'staff_approvals','staff_releases','release_delegations','release_by','approver_config','settings','monthly_additions'];
 
@@ -1564,6 +1565,7 @@ function sidebarItems(){
     {s:'VIEW'},
     {id:'staff_mgmt',i:'ti-id-badge-2',l:'Staff Records'},
     {id:'attendance',i:'ti-calendar-stats',l:'Attendance (View)'},
+    {id:'attendance_ack',i:'ti-clipboard-check',l:'Attendance Acknowledgment'},
     {id:'leave_overview',i:'ti-calendar-check',l:'Leave Overview'},
     {s:'LEFT STAFF'},
     {id:'left_staff',i:'ti-logout',l:'Left Staff'},
@@ -1580,6 +1582,7 @@ function sidebarItems(){
     items.push({s:'LEFT STAFF'},{id:'left_staff',i:'ti-logout',l:'Left Staff'});
     if(canView('all_slips')) items.push({s:'RELEASE'}, {id:'all_slips',i:'ti-checkbox',l:'Salary Release Confirmation'});
     if(isSuperAdmin(APP.user)||canView('data_archive')) items.push({s:'SUPER ADMIN'}, {id:'data_archive',i:'ti-database-cog',l:'Data Archive'});
+    if(isSuperAdmin(APP.user)) items.push({id:'attendance_ack',i:'ti-clipboard-check',l:'Attendance Acknowledgment'});
     return items;
   }
   // STAFF — their own dashboard, plus any Approver section and/or granted Admin
@@ -1587,7 +1590,7 @@ function sidebarItems(){
   {
     const u=APP.user;
     const items=[{s:'MY PORTAL'},{id:'my_home',i:'ti-layout-dashboard',l:'My Dashboard'}];
-    if(isApprover(u.id)) items.push({s:'APPROVAL'},{id:'all_slips',i:'ti-shield-check',l:'Salary Approval'});
+    if(isApprover(u.id)) items.push({s:'APPROVAL'},{id:'all_slips',i:'ti-shield-check',l:'Salary Approval'},{id:'attendance_ack',i:'ti-clipboard-check',l:'Attendance Acknowledgment'});
     // Granted admin sections (per-section view/edit). Data Archive grouped separately below.
     const secs=GRANTABLE_PRIVS.filter(p=>p.key!=='data_archive'&&canView(p.key)).map(p=>({id:p.key,i:p.i,l:p.label}));
     if(secs.length) items.push({s:'ADMIN ACCESS'}, ...secs);
@@ -1617,6 +1620,12 @@ function renderPage(){
   if(t==='manage_users')  return pgManageUsers();
   if(t==='staff_mgmt')    return pgStaffMgmt();
   if(t==='attendance')    return pgAttendance();
+  if(t==='attendance_ack'){
+    if(!(isSuperAdmin(APP.user)||APP.user.role==='director'||(APP.user.role==='staff'&&isApprover(APP.user.id))))
+      return `<div class="card"><div class="ct"><i class="ti ti-lock"></i> No Access</div>
+        <div class="alert aw"><i class="ti ti-alert-triangle"></i> You don't have permission to view this section.</div></div>`;
+    return pgAttendanceAck();
+  }
   if(t==='salary_sheet')  return pgSalarySheet();
   if(t==='custom_deds')   return pgCustomDeds();
   if(t==='custom_earnings') return pgCustomEarnings();
@@ -1994,15 +2003,19 @@ function pgAttendance(){
       ${searchBox('att-row','Search staff by name…')}
       <div style="overflow-x:auto">
       <table style="min-width:600px"><thead><tr>
-        <th>Name</th><th>Sec</th><th>T.Late</th><th>Absent</th><th>Cas.L</th><th>Ann.L</th><th>Sick.L</th><th>Half.L</th><th>Deduction</th><th>Net Pay</th>
+        <th>Name</th><th>Sec</th><th>T.Late</th><th>Absent</th><th>Cas.L</th><th>Ann.L</th><th>Sick.L</th><th>Half.L</th><th>Deduction</th><th>Net Pay</th><th>Ack</th>
       </tr></thead><tbody>
       ${SECTIONS.flatMap(sec=>{
         const rows=staff.filter(s=>s.section===sec);
         if(!rows.length) return [];
-        return [secHeaderRow(sec, 10),
+        return [secHeaderRow(sec, 11),
           ...rows.map(s=>{
             const a=(att[s.id])||{};
             const sl=calcSlip(s.id,m);
+            const ackRec=((DB.attendance_ack||{})[m]||{})[s.id];
+            const ackBadge=ackRec
+              ?(ackRec.status==='acknowledged'?'<span class="badge bg" title="'+(ackRec.date||'')+'"><i class="ti ti-circle-check"></i> Ack\'d</span>':'<span class="badge by"><i class="ti ti-clock"></i> Pending</span>')
+              :'<span class="badge bx">—</span>';
             return `<tr class="att-row" data-search="${ds(s.name+' '+s.section+' '+s.designation)}">
               <td style="white-space:nowrap">${s.name}</td>
               <td><span class="sec-${s.section.toLowerCase()}">${s.section[0]}</span></td>
@@ -2010,6 +2023,7 @@ function pgAttendance(){
               <td>${a.casual_leave||0}</td><td>${a.annual_leave||0}</td><td>${a.sick_leave||0}</td><td>${a.hl||0}</td>
               <td style="color:#f87171">${sl?'-Rs'+sl.deduction.toLocaleString():'-'}</td>
               <td style="color:#34d399;font-weight:600">${sl?'Rs'+sl.net.toLocaleString():'-'}</td>
+              <td style="white-space:nowrap">${ackBadge}</td>
             </tr>`;
           })];
       }).join('')}
@@ -2064,7 +2078,71 @@ function pgAttendance(){
   </div>`;
 }
 
-// SALARY SHEET
+// ATTENDANCE ACKNOWLEDGMENT — Super Admin generates the request for a month;
+// staff acknowledge it from their own dashboard; Super Admin, Director (CEO)
+// and Approvers can all track who has/hasn't acknowledged.
+function pgAttendanceAck(){
+  const m=APP.month, mLabel=fmtMonthLabel(m);
+  const canManage=isSuperAdmin(APP.user);
+  const staff=staffInMonth(m);
+  const hasAtt=Object.keys(DB.attendance[m]||{}).length>0;
+  const ackMap=(DB.attendance_ack||{})[m]||{};
+  const requested=Object.keys(ackMap).length>0;
+  const ackCount=staff.filter(s=>(ackMap[s.id]||{}).status==='acknowledged').length;
+  return `<div class="card">
+    <div class="ct"><i class="ti ti-clipboard-check"></i> Attendance Acknowledgment
+      ${monthPicker(m,{nav:true,style:'width:160px;margin-left:auto'})}
+    </div>
+    ${!hasAtt?`<div class="alert aw"><i class="ti ti-alert-triangle"></i> Attendance for ${mLabel} hasn't been generated yet${canManage?' — generate it from the Attendance section first.':'.'}</div>`:`
+    ${requested
+      ?`<div class="alert ai"><i class="ti ti-info-circle"></i> Acknowledgment requested for <b>${mLabel}</b>. <b>${ackCount}/${staff.length}</b> staff have acknowledged.</div>`
+      :(canManage?`<div class="alert aw"><i class="ti ti-alert-triangle"></i> Acknowledgment hasn't been requested for ${mLabel} yet.</div>`:`<div class="alert ai"><i class="ti ti-info-circle"></i> Acknowledgment hasn't been requested for ${mLabel} yet.</div>`)}
+    ${canManage?`<button class="btn ${requested?'bou':'bgr'}" style="width:100%;padding:11px;margin-bottom:14px" onclick="genAttendanceAck('${m}')"><i class="ti ti-send"></i> ${requested?'Re-send / Refresh Acknowledgment Requests':'Generate Attendance Acknowledgment for '+mLabel}</button>`:''}
+    ${searchBox('ack-row','Search staff by name…')}
+    <div style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th>Name</th><th>Sec</th><th>Status</th><th>Date</th></tr></thead><tbody>
+    ${SECTIONS.flatMap(sec=>{
+      const rows=staff.filter(s=>s.section===sec);
+      if(!rows.length) return [];
+      return [secHeaderRow(sec,4),
+        ...rows.map(s=>{
+          const a=ackMap[s.id];
+          const status=a?a.status:(requested?'pending':null);
+          const badge=status==='acknowledged'?`<span class="badge bg"><i class="ti ti-circle-check"></i> Acknowledged</span>`
+            :status==='pending'?`<span class="badge by"><i class="ti ti-clock"></i> Pending</span>`
+            :`<span class="badge bx">Not requested</span>`;
+          return `<tr class="ack-row" data-search="${ds(s.name+' '+s.section)}">
+            <td style="white-space:nowrap">${s.name}</td>
+            <td><span class="sec-${s.section.toLowerCase()}">${s.section[0]}</span></td>
+            <td>${badge}</td>
+            <td class="tm">${a&&a.date?a.date:'—'}</td>
+          </tr>`;
+        })];
+    }).join('')}
+    </tbody></table></div>`}
+  </div>`;
+}
+// Super Admin: open an acknowledgment request for everyone with attendance generated this month.
+async function genAttendanceAck(m){
+  if(!Object.keys(DB.attendance[m]||{}).length){ toast('Generate attendance for this month first.','error'); return; }
+  if(!DB.attendance_ack) DB.attendance_ack={};
+  if(!DB.attendance_ack[m]) DB.attendance_ack[m]={};
+  staffInMonth(m).forEach(s=>{ if(!DB.attendance_ack[m][s.id]) DB.attendance_ack[m][s.id]={status:'pending'}; });
+  await saveField('attendance_ack');
+  toast('Attendance acknowledgment requested for '+fmtMonthLabel(m)+'.','success');
+  R();
+}
+// Staff: acknowledge their own attendance for the month from their dashboard.
+async function ackMyAttendance(m){
+  const u=APP.user;
+  if(!DB.attendance_ack) DB.attendance_ack={};
+  if(!DB.attendance_ack[m]) DB.attendance_ack[m]={};
+  DB.attendance_ack[m][u.id]={status:'acknowledged', date:new Date().toLocaleDateString(), by:u.name};
+  await saveField('attendance_ack');
+  toast('Attendance acknowledged. Thank you!','success');
+  R();
+}
+
+
 // Columns: Name | Section | Designation | Basic | DL (lates/2 days) | H.Leave | D.Lea (absent+cas) | Security | Net Pay
 // Reusable columnar salary table (same layout admin sees), for a given staff list.
 // opts.actionHeader (string) + opts.actionCell(staff, slip) add an extra column.
@@ -2782,6 +2860,12 @@ function pgMyHome(){
       <div class="sr"><span style="color:var(--text2)">Sick Leave</span><span>${att.sick_leave||0}</span></div>
       <div class="sr"><span style="color:var(--text2)">Casual Leave (unpaid)</span><span>${att.casual_leave||0}</span></div>
       <div class="sr"><span style="color:var(--text2)">Half Leave</span><span>${att.hl||0}</span></div>`}
+      ${(()=>{
+        const ack=((DB.attendance_ack||{})[m]||{})[u.id];
+        if(!ack) return '';
+        if(ack.status==='acknowledged') return `<div style="margin-top:12px"><span class="badge bg"><i class="ti ti-circle-check"></i> Attendance Acknowledged${ack.date?' on '+ack.date:''}</span></div>`;
+        return `<button class="btn bgr" style="width:100%;margin-top:12px;padding:10px" onclick="ackMyAttendance('${m}')"><i class="ti ti-clipboard-check"></i> Acknowledge Attendance</button>`;
+      })()}
     </div>
 
     <div class="card" style="margin-bottom:0${monthsProcessed>0?';cursor:pointer':''}"${monthsProcessed>0?` onclick="openModal('year_breakdown','${u.id}|${year}')" title="Tap for the month-wise breakdown"`:''}>
@@ -3329,7 +3413,7 @@ function openArchiveWindow(title, months, staffIds, sigMap){
 }
 
 // Month-keyed fields stored PER staff member ([m][sid]) — used for individual delete.
-const PER_STAFF_MONTH_FIELDS=['attendance','salary_sheets','receipts','staff_releases',
+const PER_STAFF_MONTH_FIELDS=['attendance','attendance_ack','salary_sheets','receipts','staff_releases',
   'release_delegations','release_by','staff_approvals'];
 async function deleteArchiveData(){
   const scope=document.getElementById('del_scope').value;
