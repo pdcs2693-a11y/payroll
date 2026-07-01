@@ -1430,15 +1430,6 @@ function renderAuth(){
     <div class="err" id="lerr">Incorrect username or password.</div>
     <button class="btn-login" onclick="login()"><i class="ti ti-login"></i> Sign In</button>
     <div style="text-align:center;margin-top:10px"><a onclick="openModal('recover_password')" style="color:var(--text2);font-size:12px;cursor:pointer;text-decoration:underline"><i class="ti ti-help-circle" style="font-size:12px"></i> Forgot password?</a></div>
-    <div class="ql-section">
-      <p>Quick demo logins</p>
-      <div class="ql-grid">
-        <button class="qbtn" onclick="ql('superadmin','superadmin@pdcs')"><span class="badge ba">Super Admin</span> superadmin</button>
-        <button class="qbtn" onclick="ql('ceo','ceo@pdcs')"><span class="badge bd">Director</span> ceo</button>
-        <button class="qbtn" onclick="ql('sir.kareem','staff123')"><span class="badge bx">Staff</span> sir.kareem</button>
-        <button class="qbtn" onclick="ql('sir.adnan','staff123')"><span class="badge bx">Staff</span> sir.adnan</button>
-      </div>
-    </div>
   </div></div>
   ${APP.modal?renderModal():''}`;
 }
